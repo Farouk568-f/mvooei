@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>سينما ستريم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --background: #101010;
+        --surface: #1a1a1a;
+        --primary: #8257E5;
+        --secondary: #22c55e;
+        --text-light: #f5f5f5;
+        --text-dark: #a0a0a0;
+        --border: #2a2a2a;
+        --danger: #ef4444;
+      }
+      html {
+        scroll-behavior: auto; /* Better for search page navigation */
+      }
+      body {
+        font-family: 'Tajawal', 'Inter', sans-serif;
+        background-color: var(--background);
+        color: var(--text-light);
+        -webkit-tap-highlight-color: transparent;
+        background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0);
+        background-size: 25px 25px;
+      }
+      /* On smaller screens, reduce the base font size to scale the UI down slightly. */
+      @media (max-width: 640px) {
+        html {
+          font-size: 14px;
+        }
+      }
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      #root:empty::before {
+        content: "CineStream";
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--primary);
+        background-color: var(--background);
+        animation: pulse-text 1.8s infinite ease-in-out;
+      }
+      .ken-burns {
+        animation: ken-burns-animation 20s ease-in-out infinite alternate;
+      }
+      @keyframes ken-burns-animation {
+        0% { transform: scale(1) translate(0, 0); }
+        100% { transform: scale(1.15) translate(5px, -5px); }
+      }
+      .skeleton {
+        background-color: #ffffff0d;
+        position: relative;
+        overflow: hidden;
+      }
+      .skeleton::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, #ffffff14, transparent);
+          animation: shimmer 1.5s infinite;
+      }
+      @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+      }
+      @keyframes double-tap-anim {
+        0% { opacity: 0; transform: scale(0.3); }
+        25% { opacity: 1; transform: scale(1.2); }
+        100% { opacity: 0; transform: scale(1.6); }
+      }
+      .animate-double-tap {
+        animation: double-tap-anim 0.6s ease-out forwards;
+      }
+      .seek-indicator {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+      @keyframes slide-in-bottom {
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      @keyframes pulse-text {
+        0%, 100% { opacity: 0.8; transform: scale(1); }
+        50% { opacity: 1; text-shadow: 0 0 15px var(--primary); transform: scale(1.05); }
+      }
+       @keyframes hero-content-in {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-hero-content-in {
+        animation: hero-content-in 1s 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes hero-poster-in {
+        from { opacity: 0; transform: translateY(30px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .animate-hero-poster-in {
+        animation: hero-poster-in 1s 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes progress-bar {
+          from { width: 0%; }
+          to { width: 100%; }
+      }
+      .animate-progress-bar {
+          animation: progress-bar linear forwards;
+      }
+
+      /* Staggered Content Animation */
+      @keyframes fade-in-up {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in-up {
+        opacity: 0;
+        animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      
+      /* Legacy fade-in, keep for components that don't need 'up' motion */
+      @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        opacity: 0;
+        animation: fade-in 0.5s ease-out forwards;
+      }
+      
+      /* New Page Transition */
+      @keyframes page-enter-anim {
+        from {
+          opacity: 0;
+          transform: translateY(15px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .animate-page-enter {
+        animation: page-enter-anim 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+      }
+      
+      /* Unified Card Animation */
+      @keyframes grid-item-in {
+        from {
+          opacity: 0;
+          transform: translateY(20px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      .animate-grid-item {
+        opacity: 0;
+        animation: grid-item-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      .interactive-card {
+        transition: transform 0.3s ease-out, box-shadow 0.3s ease-out !important;
+      }
+      .interactive-card:hover {
+        transform: translateY(-6px) scale(1.03);
+        box-shadow: 0 12px 30px -10px rgba(0,0,0,0.6);
+      }
+      .interactive-card-sm {
+        transition: transform 0.3s ease-out, box-shadow 0.3s ease-out !important;
+      }
+      .interactive-card-sm:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 8px 20px -8px rgba(0,0,0,0.5);
+      }
+
+      /* Button Active State */
+      .btn-press {
+          transition: transform 0.1s ease-out, filter 0.2s;
+      }
+      .btn-press:hover {
+          filter: brightness(1.1);
+      }
+      .btn-press:active {
+          transform: scale(0.96);
+          filter: brightness(0.95);
+      }
+
+
+      /* New animations for Shorts Page */
+      @keyframes slide-in-right-short {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      .animate-slide-in-right-short {
+        animation: slide-in-right-short 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        opacity: 0; /* Prevents flash before animation starts */
+      }
+      @keyframes slide-in-up-short {
+          from { transform: translateY(50px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slide-in-up-short {
+          animation: slide-in-up-short 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+          opacity: 0; /* Prevents flash before animation starts */
+      }
+      .scroll-snap-stop-always {
+          scroll-snap-stop: always;
+      }
+
+      .glassmorphic-panel {
+        background: rgba(26, 26, 26, 0.7);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      
+      @keyframes shrink-to-pip {
+        from {
+            transform: translate3d(var(--pip-start-left), var(--pip-start-top), 0) scaleX(var(--pip-start-scale-x)) scaleY(var(--pip-start-scale-y));
+        }
+        to {
+            transform: translate3d(var(--pip-end-x), var(--pip-end-y), 0) scaleX(1) scaleY(1);
+        }
+      }
+      .animate-pip-enter {
+        transform-origin: top left;
+        animation: shrink-to-pip 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      }
+      
+      /* New animations for Live Room */
+      @keyframes float-up {
+          0% {
+              transform: translateY(0) scale(1);
+              opacity: 1;
+          }
+          100% {
+              transform: translateY(-200px) scale(1.5);
+              opacity: 0;
+          }
+      }
+      .animate-float-up {
+          animation: float-up 1.5s ease-out forwards;
+      }
+      @keyframes chat-in {
+          from {
+              opacity: 0;
+              transform: translateY(10px);
+          }
+          to {
+              opacity: 1;
+              transform: translateY(0);
+          }
+      }
+      .animate-chat-in {
+          animation: chat-in 0.3s ease-out forwards;
+      }
+      @keyframes pulse-live {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          50% { transform: scale(1.05); box-shadow: 0 0 5px 3px rgba(239, 68, 68, 0); }
+      }
+      .animate-pulse-live {
+        animation: pulse-live 2s infinite;
+      }
+
+      /* Drag and Drop Server Preferences */
+      .dragging-server {
+        opacity: 0.5;
+        background: var(--primary) !important;
+        transform: scale(1.05);
+      }
+
+      /* Live TV page styles */
+       @keyframes slide-in-right {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+      .animate-slide-in-right {
+        animation: slide-in-right 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+      }
+
+      @keyframes slide-out-right {
+        from { transform: translateX(0); }
+        to { transform: translateX(100%); }
+      }
+      .animate-slide-out-right {
+        animation: slide-out-right 0.4s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+      }
+
+      @keyframes channel-logo-pulse {
+          0%, 100% {
+              transform: scale(1);
+          }
+          50% {
+              transform: scale(1.05);
+          }
+      }
+      .animate-channel-logo {
+          animation: channel-logo-pulse 4s infinite ease-in-out;
+      }
+
+      /* Dynamic Subtitle Positioning */
+      .player-container-scope video::cue {
+        transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+        /* The default 'controls-visible' (higher) position is now set by the VTT 'line' property. */
+        /* We apply no transform by default. */
+        transform: translateY(0);
+      }
+      .player-container-scope.c-controls-hidden video::cue {
+        /* This is the 'controls-hidden' (lower) position. */
+        /* We move it DOWN from its VTT-defined position. */
+        transform: translateY(10vh);
+      }
+
+      /* Next Episode Button Animations */
+      @keyframes slide-in-from-right {
+        from { transform: translateX(110%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      .animate-slide-in-from-right {
+        animation: slide-in-from-right 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+      }
+      @keyframes fill-progress {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(0); }
+      }
+      .animate-fill-progress {
+        animation: fill-progress 5s linear forwards;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.7.1",
+    "hls.js": "https://esm.sh/hls.js@^1.6.7",
+    "react/": "https://esm.sh/react@^19.1.1/",
+    "react": "https://esm.sh/react@^19.1.1",
+    "@google/genai": "https://esm.sh/@google/genai@0.15.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
