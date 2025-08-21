@@ -1,8 +1,5 @@
-const CACHE_NAME = 'cinestream-v1';
-const APP_SHELL = [
-  '/',
-  '/index.html'
-];
+const CACHE_NAME = 'cinestream-v2';
+const APP_SHELL = ['/index.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -19,27 +16,47 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const req = event.request;
+  const request = event.request;
+  const url = new URL(request.url);
 
-  // Handle SPA navigations: always serve cached index.html when offline
-  const isNavigation = req.mode === 'navigate';
-  if (isNavigation) {
+  // SPA navigations: network-first, fallback to cached index.html
+  if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() => caches.match('/index.html'))
+      (async () => {
+        try {
+          return await fetch(request);
+        } catch (_e) {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match('/index.html');
+          return (
+            cached ||
+            new Response('<!doctype html><title>Offline</title><h1>Offline</h1>', {
+              headers: { 'Content-Type': 'text/html' }
+            })
+          );
+        }
+      })()
     );
     return;
   }
 
-  // For other requests: try network, fall back to cache, then populate cache
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const resClone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone)).catch(() => {});
-        return res;
-      })
-      .catch(() => caches.match(req))
-  );
+  // Only handle same-origin GET requests for assets
+  if (url.origin === self.location.origin && request.method === 'GET') {
+    event.respondWith(
+      (async () => {
+        try {
+          const res = await fetch(request);
+          // Cache a clone (ignore failures silently)
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, res.clone())).catch(() => {});
+          return res;
+        } catch (_e) {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(request);
+          return cached || new Response('', { status: 504, statusText: 'Offline' });
+        }
+      })()
+    );
+  }
 });
 
 
