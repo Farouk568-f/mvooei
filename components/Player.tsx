@@ -7,6 +7,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { fetchStreamUrl } from '../services/apiService';
 import * as Icons from './Icons';
 import { IMAGE_BASE_URL, BACKDROP_SIZE_MEDIUM } from '../contexts/constants';
+// import { translateSrtToArabic } from '../services/aiService';
 
 interface PlayerProps {
     item: Movie;
@@ -61,7 +62,7 @@ const adjustSrtTime = (time: string, offset: number): string => {
 const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, initialEpisode, initialTime, initialStreamUrl, onEpisodesButtonClick, onEnterPip, selectedProvider, onProviderSelected, onStreamFetchStateChange, setVideoNode, serverPreferences, onActiveStreamUrlChange, episodes, onEpisodeSelect, isOffline, downloadId }) => {
     const navigate = useNavigate();
     const { setToast, getScreenSpecificData, setScreenSpecificData } = useProfile();
-    const { t } = useTranslation();
+    const { t, language: userLanguage } = useTranslation();
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -100,11 +101,10 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     const [playbackRate, setPlaybackRate] = useState(1);
     const [activePopover, setActivePopover] = useState<'quality' | 'speed' | 'language' | null>(null);
 
-    // Startup loading metrics
-    const INITIAL_STARTUP_BUFFER_SECONDS = 5; // target buffer for initial start
-    const [startupPercent, setStartupPercent] = useState(0);
-    const [downloadSpeedKbps, setDownloadSpeedKbps] = useState<number | null>(null);
-    const speedMeasuredRef = useRef(false);
+    // Live loading metrics
+    const [livePercent, setLivePercent] = useState(0);
+    const [liveSpeed, setLiveSpeed] = useState(0); // in KB/s
+    const lastProgressData = useRef({ lastLoaded: 0, lastTime: Date.now() });
 
     const [buffered, setBuffered] = useState(0);
     const [fitMode, setFitMode] = useState<'contain' | 'cover'>('cover');
@@ -119,7 +119,8 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     const [provider, setProvider] = useState<string | null>(null);
     const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
     const [vttTracks, setVttTracks] = useState<{ lang: string; url: string; label: string }[]>([]);
-    const [activeSubtitleLang, setActiveSubtitleLang] = useState<string | null>('ar');
+    const [activeSubtitleLang, setActiveSubtitleLang] = useState<string | null>(userLanguage === 'ar' ? 'ar' : null);
+    const [isTranslating, setIsTranslating] = useState(false);
     const [selectedDub, setSelectedDub] = useState<'ar' | 'fr' | null>(null);
     const [shouldResetTime, setShouldResetTime] = useState(false);
     const [showNextEpisodeButton, setShowNextEpisodeButton] = useState(false);
@@ -287,39 +288,62 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             const timeOffset = subtitleSettings.timeOffset || 0;
             const srtTimestampLineRegex = /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/g;
 
+            const processSrtToVtt = (srtText: string) => {
+                let vttContent = "WEBVTT\n\n";
+                vttContent += srtText
+                    .replace(/\r/g, '')
+                    .replace(srtTimestampLineRegex, (match, startTime, endTime) => {
+                        const adjustedStart = adjustSrtTime(startTime, timeOffset);
+                        const adjustedEnd = adjustSrtTime(endTime, timeOffset);
+                        return `${adjustedStart} --> ${adjustedEnd} line:${finalLinePosition}%`;
+                    });
+                const blob = new Blob([vttContent], { type: 'text/vtt' });
+                const vttUrl = URL.createObjectURL(blob);
+                createdUrls.push(vttUrl);
+                return vttUrl;
+            };
 
             for (const sub of subtitles) {
-                if (processedLangs.has(sub.language)) {
-                    console.warn(`Duplicate subtitle language skipped: ${sub.language}`);
-                    continue;
-                }
+                if (processedLangs.has(sub.language)) continue;
                 try {
                     const res = await fetch(sub.url);
                     if (!res.ok) continue;
-
-                    const buffer = await res.arrayBuffer();
-                    const decoder = new TextDecoder('utf-8');
-                    const srtText = decoder.decode(buffer).replace(/\uFFFD/g, '');
-
-                    let vttContent = "WEBVTT\n\n";
-                    vttContent += srtText
-                        .replace(/\r/g, '')
-                        .replace(srtTimestampLineRegex, (match, startTime, endTime) => {
-                            const adjustedStart = adjustSrtTime(startTime, timeOffset);
-                            const adjustedEnd = adjustSrtTime(endTime, timeOffset);
-                            return `${adjustedStart} --> ${adjustedEnd} line:${finalLinePosition}%`;
-                        });
-                    
-                    const blob = new Blob([vttContent], { type: 'text/vtt' });
-                    const vttUrl = URL.createObjectURL(blob);
-                    
-                    createdUrls.push(vttUrl);
+                    const srtText = await res.text();
+                    const vttUrl = processSrtToVtt(srtText);
                     newTracks.push({ lang: sub.language, url: vttUrl, label: sub.display });
                     processedLangs.add(sub.language);
                 } catch (e) {
                     console.error(`Failed to process subtitle: ${sub.display}`, e);
                 }
             }
+
+            const hasArabicSub = processedLangs.has('ar');
+            if (!hasArabicSub && subtitles.length > 0) {
+                const sourceSub = subtitles.find(s => s.language === 'en') || subtitles[0];
+                if (sourceSub) {
+                    if (active) setIsTranslating(true);
+                    try {
+                        const sourceRes = await fetch(sourceSub.url);
+                        if (sourceRes.ok) {
+                            const sourceSrt = await sourceRes.text();
+                            // const translatedSrt = await translateSrtToArabic(sourceSrt);
+                            // if (translatedSrt && active) {
+                            //     const vttUrl = processSrtToVtt(translatedSrt);
+                            //     const aiLangCode = 'ar-ai';
+                            //     newTracks.push({ lang: aiLangCode, url: vttUrl, label: t('arabicAi', {defaultValue: 'Arabic (AI)'}) });
+                            //     if (userLanguage === 'ar') {
+                            //         setActiveSubtitleLang(aiLangCode);
+                            //     }
+                            // }
+                        }
+                    } catch (e) {
+                        console.error("Error during AI subtitle translation process", e);
+                    } finally {
+                        if (active) setIsTranslating(false);
+                    }
+                }
+            }
+
             if (active) {
                 setVttTracks(newTracks);
             }
@@ -335,7 +359,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             active = false;
             createdUrls.forEach(url => URL.revokeObjectURL(url));
         }
-    }, [subtitles, subtitleSettings]);
+    }, [subtitles, subtitleSettings, t, userLanguage]);
     
     useEffect(() => {
         const video = videoRef.current;
@@ -397,6 +421,17 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 };
                 const hls = new Hls.default(hlsConfig);
                 hlsRef.current = hls;
+
+                // Listen for fragment buffering to calculate live speed for HLS streams
+                hls.on(Hls.default.Events.FRAG_BUFFERED, (event, data) => {
+                    const stats = data.stats;
+                    // const durationMs = stats.tload - stats.tfirst;
+                    // if (durationMs > 0) {
+                    //     const speedKbps = (stats.loaded / 1024) / (durationMs / 1000);
+                    //     setLiveSpeed(speedKbps);
+                    // }
+                });
+                
                 hls.loadSource(sourceUrl);
                 hls.attachMedia(video);
                 
@@ -628,10 +663,27 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             if (video.buffered.length > 0 && duration > 0) {
                 const bufferedEnd = video.buffered.end(video.buffered.length - 1);
                 setBuffered((bufferedEnd / duration) * 100);
-                // Compute initial startup percent toward a small target buffer
-                const initialBufferedSec = bufferedEnd;
-                const percent = Math.max(0, Math.min(100, (initialBufferedSec / INITIAL_STARTUP_BUFFER_SECONDS) * 100));
-                setStartupPercent(percent);
+                
+                // Calculate live percentage of total video buffered
+                const percent = (bufferedEnd / duration) * 100;
+                setLivePercent(percent);
+
+                // Calculate live speed for non-HLS streams (fallback using provided logic)
+                if (!hlsRef.current) {
+                    const now = Date.now();
+                    const { lastLoaded, lastTime } = lastProgressData.current;
+                    
+                    const loaded = bufferedEnd * (video.videoWidth * video.videoHeight ? 250 : 1000); 
+
+                    const elapsed = (now - lastTime) / 1000;
+                    const diff = loaded - lastLoaded;
+
+                    if (elapsed > 0.5 && diff > 0) { // Update roughly every half-second
+                        const speed = (diff / 1024 / elapsed);
+                        setLiveSpeed(speed);
+                        lastProgressData.current = { lastLoaded: loaded, lastTime: now };
+                    }
+                }
             }
         };
         const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -645,24 +697,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         video.addEventListener('playing', onPlaying);
         video.addEventListener('progress', onProgress);
 
-        // One-time small-range fetch to estimate download speed at startup (only for direct MP4)
-        if (!speedMeasuredRef.current && video.src && !video.src.includes('.m3u8')) {
-            speedMeasuredRef.current = true;
-            (async () => {
-                try {
-                    const controller = new AbortController();
-                    const start = performance.now();
-                    const resp = await fetch(video.src, { headers: { Range: 'bytes=0-262143' }, signal: controller.signal }); // 256KB
-                    const end = performance.now();
-                    if (resp.ok || resp.status === 206) {
-                        const bytes = 262144;
-                        const seconds = Math.max(0.001, (end - start) / 1000);
-                        setDownloadSpeedKbps((bytes / 1024) / seconds);
-                    }
-                } catch {}
-            })();
-        }
-        
         setIsPlaying(!video.paused);
         setCurrentTime(video.currentTime);
         setDuration(video.duration || 0);
@@ -742,16 +776,11 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 </div>
             )}
 
-
             {isBuffering && (
-                <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center gap-3 z-20 pointer-events-none">
-                    <div className="w-12 h-12 border-4 border-t-transparent border-white rounded-full animate-spin"></div>
-                    <div className="text-white text-sm font-semibold drop-shadow">
-                        {startupPercent.toFixed(0)}%
-                    </div>
-                    {downloadSpeedKbps !== null && (
-                        <div className="text-white/80 text-xs">{Math.max(0, downloadSpeedKbps).toFixed(0)} KB/s</div>
-                    )}
+                <div id="loader" className="absolute inset-0 flex flex-col justify-center items-center text-white z-20 pointer-events-none" style={{fontFamily: 'sans-serif'}}>
+                    <div className="w-[70px] h-[70px] border-[6px] border-solid border-[rgba(255,255,255,0.2)] border-t-white rounded-full animate-spin mb-2.5"></div>
+                    <div id="percent" className="text-lg my-[3px]">{livePercent.toFixed(1)}%</div>
+                    <div id="speed" className="text-sm opacity-70">{liveSpeed > 0 ? `${liveSpeed.toFixed(1)} KB/s` : ''}</div>
                 </div>
             )}
             
@@ -804,6 +833,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                     setFitMode={setFitMode}
                     availableStreams={availableStreams}
                     handleStreamChange={handleStreamChange}
+                    isTranslating={isTranslating}
                 />
             )}
         </div>
@@ -814,11 +844,11 @@ const Controls: React.FC<any> = ({
     showControls, isPlaying, itemType, currentTime, duration, isFullscreen, isBuffering,
     togglePlay, handleSeek, toggleFullscreen, onLock,
     activePopover, setActivePopover, navigate, t, item, episode, season, progressBarRef, buffered,
-    nextEpisode, handlePlayNext,
+    nextEpisode, showNextEpisodeButton, handlePlayNext,
     playbackRate, setPlaybackRate, videoRef, availableQualities, currentQuality, autoLevelIndex,
     handleQualityChange, vttTracks, activeSubtitleLang, handleSubtitleChange,
     fitMode, setFitMode,
-    availableStreams, handleStreamChange, currentStream
+    availableStreams, handleStreamChange, currentStream, isTranslating
 }) => {
     
     const handleProgressInteraction = (e: React.MouseEvent | React.TouchEvent, isDragging: boolean) => {
@@ -916,6 +946,20 @@ const Controls: React.FC<any> = ({
                     )}
                 </div>
             )}
+            
+            {showNextEpisodeButton && (
+                <div className="absolute bottom-28 right-4 z-20 pointer-events-auto animate-slide-in-from-right">
+                    <button
+                        onClick={handlePlayNext}
+                        className="relative w-40 h-12 bg-black/70 backdrop-blur-md rounded-lg overflow-hidden flex items-center justify-center text-white font-semibold text-sm btn-press"
+                    >
+                        <span>{t('nextEpisode')}</span>
+                        <div className="absolute bottom-0 left-0 h-1 bg-white/30 w-full">
+                            <div className="h-full bg-white animate-fill-progress"></div>
+                        </div>
+                    </button>
+                </div>
+            )}
 
             {/* Bottom Section */}
             <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-auto">
@@ -953,6 +997,7 @@ const Controls: React.FC<any> = ({
                                     <Popover onClose={() => setActivePopover(null)}>
                                         <button onClick={() => handleSubtitleChange(null)} className={!activeSubtitleLang ? 'bg-white/20' : ''}>{t('off')}</button>
                                         {vttTracks.map((sub: any) => <button key={sub.lang} onClick={() => handleSubtitleChange(sub.lang)} className={activeSubtitleLang === sub.lang ? 'bg-white/20' : ''}>{sub.label}</button>)}
+                                        {isTranslating && <div className="text-center text-xs p-2 text-gray-300 animate-pulse">{t('translating', { defaultValue: 'Translating...'})}</div>}
                                     </Popover>
                                  )}
                             </button>
