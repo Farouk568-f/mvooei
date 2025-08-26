@@ -89,16 +89,14 @@ export const translateSrtViaGoogle = async (srtContent: string, targetLang: stri
         console.log('Request body keys:', Object.keys(requestBody));
         console.log('SRT content preview:', srtContent.substring(0, 200));
 
-        const baseUrl = (import.meta as any).env?.VITE_TRANSLATION_API_URL;
-        if (!baseUrl) {
-            // إذا لم يتم تعريف السيرفر، استخدم الطريقة القديمة مباشرة
-            return await translateSrtViaGoogleFallback(srtContent, targetLang);
-        }
-
+        // استخدام endpoint الجديد مباشرة
+        const baseUrl = 'https://6c853744b20c.ngrok-free.app';
+        
         const response = await fetch(`${baseUrl}/translate_srt`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify(requestBody)
         });

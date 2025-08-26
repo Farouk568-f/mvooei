@@ -6,7 +6,8 @@ export default defineConfig(({ mode }) => {
     return {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'import.meta.env.VITE_TRANSLATION_API_URL': JSON.stringify(env.VITE_TRANSLATION_API_URL || 'https://6c853744b20c.ngrok-free.app')
       },
       server: {
         proxy: {
