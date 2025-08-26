@@ -136,6 +136,16 @@ export interface SubtitleSettings {
     timeOffset: number; // seconds, e.g., -1.5 or 2
 }
 
+export interface VideoFilters {
+    brightness: number; // -100 to 100
+    contrast: number; // -100 to 100
+    saturation: number; // -100 to 100
+    sharpness: number; // 0 to 100
+    hue: number; // -180 to 180
+    gamma: number; // 0.1 to 2.0
+    enabled: boolean; // whether filters are active
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -149,6 +159,7 @@ export interface Profile {
   followedActors?: number[];
   serverPreferences?: string[];
   subtitleSettings?: SubtitleSettings;
+  videoFilters?: VideoFilters;
   myChannel?: {
     name: string;
     schedule: ScheduleItem[];
