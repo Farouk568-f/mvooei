@@ -1,3 +1,5 @@
+// services/translationService.ts
+
 /**
  * WARNING: This service uses an unofficial, public Google Translate API endpoint.
  * It is not guaranteed to be stable and may be rate-limited or blocked by Google at any time.
@@ -12,22 +14,19 @@ interface SrtBlock {
     index: string;
     timestamp: string;
     text: string;
-    isTranslatable: boolean; // New flag to identify lines that should be translated
+    isTranslatable?: boolean;
 }
 
 const parseSrt = (srtContent: string): SrtBlock[] => {
     const blocks: SrtBlock[] = [];
     let match;
-    srtBlockRegex.lastIndex = 0; // Reset regex state from previous executions
+    srtBlockRegex.lastIndex = 0; // Reset regex state
     while ((match = srtBlockRegex.exec(srtContent)) !== null) {
         const text = match[3].trim();
-        // A line is considered non-translatable if it's enclosed in [] or starts with ♪
-        const isTranslatable = !(text.startsWith('[') && text.endsWith(']')) && !text.startsWith('♪');
         blocks.push({
             index: match[1],
             timestamp: match[2],
             text: text,
-            isTranslatable: isTranslatable,
         });
     }
     return blocks;
@@ -35,14 +34,11 @@ const parseSrt = (srtContent: string): SrtBlock[] => {
 
 const reconstructSrt = (blocks: SrtBlock[]): string => {
     return blocks
-        .map(block => {
-            return `${block.index}\n${block.timestamp}\n${block.text}`;
-        })
+        .map(block => `${block.index}\n${block.timestamp}\n${block.text}`)
         .join('\n\n');
 };
 
 const translateTextBatch = async (texts: string[], targetLang: string): Promise<string[]> => {
-    // If there's nothing to translate, return an empty array.
     if (texts.length === 0) return [];
     
     const separator = " ||| ";
@@ -66,12 +62,8 @@ const translateTextBatch = async (texts: string[], targetLang: string): Promise<
     const translatedFullText = data[0][0][0];
     const translatedTexts = translatedFullText.split(separator.trim());
     
-    // تحسين الترجمة العربية - إزالة النقاط الزائدة وتحسين التنسيق
     if (targetLang === 'ar') {
-        return translatedTexts.map(text => {
-            // إزالة النقاط الزائدة في نهاية النص
-            return text.replace(/\.+$/, '');
-        });
+        return translatedTexts.map(text => text.replace(/\.+$/, ''));
     }
     
     return translatedTexts;
@@ -80,16 +72,11 @@ const translateTextBatch = async (texts: string[], targetLang: string): Promise<
 export const translateSrtViaGoogle = async (srtContent: string, targetLang: string = 'ar'): Promise<string | null> => {
     try {
         console.log(`Sending translation request for ${srtContent.length} characters to Python service...`);
-        // استخدام خدمة Python للترجمة
         const requestBody = {
             srt_content: srtContent,
             target_lang: targetLang
         };
         
-        console.log('Request body keys:', Object.keys(requestBody));
-        console.log('SRT content preview:', srtContent.substring(0, 200));
-
-        // استخدام endpoint الجديد مباشرة
         const baseUrl = 'https://878e37861147.ngrok-free.app';
         
         const response = await fetch(`${baseUrl}/translate_srt`, {
@@ -105,7 +92,6 @@ export const translateSrtViaGoogle = async (srtContent: string, targetLang: stri
             console.error(`Translation service error: ${response.status}`);
             const errorText = await response.text();
             console.error('Error response:', errorText);
-            // في حالة فشل خدمة Python، استخدم الطريقة القديمة كـ fallback
             return await translateSrtViaGoogleFallback(srtContent, targetLang);
         }
 
@@ -114,30 +100,43 @@ export const translateSrtViaGoogle = async (srtContent: string, targetLang: stri
         
         if (data.error || !data.translated_srt) {
             console.error("Translation service error:", data.error);
-            // في حالة وجود خطأ، استخدم الطريقة القديمة كـ fallback
             return await translateSrtViaGoogleFallback(srtContent, targetLang);
         }
 
-        return data.translated_srt;
+        // --- START OF FIX ---
+        // Sanitize the response from the backend by parsing and reconstructing it.
+        // This ensures consistent formatting and fixes issues with mixed content.
+        const srtBlocks = parseSrt(data.translated_srt);
+        const sanitizedSrt = reconstructSrt(srtBlocks);
+        return sanitizedSrt;
+        // --- END OF FIX ---
 
     } catch (error) {
         console.error("Error connecting to translation service:", error);
-        // في حالة فشل الاتصال، استخدم الطريقة القديمة كـ fallback
         return await translateSrtViaGoogleFallback(srtContent, targetLang);
     }
 };
 
-// الطريقة القديمة كـ fallback
 const translateSrtViaGoogleFallback = async (srtContent: string, targetLang: string = 'ar'): Promise<string | null> => {
     try {
-        const srtBlocks = parseSrt(srtContent);
+        // This fallback logic now becomes the reference for how SRT should be handled.
+        const parseForFallback = (content: string): SrtBlock[] => {
+            const blocks: SrtBlock[] = [];
+            let match;
+            srtBlockRegex.lastIndex = 0;
+            while ((match = srtBlockRegex.exec(content)) !== null) {
+                const text = match[3].trim();
+                const isTranslatable = !(text.startsWith('[') && text.endsWith(']')) && !text.startsWith('♪');
+                blocks.push({ index: match[1], timestamp: match[2], text: text, isTranslatable: isTranslatable });
+            }
+            return blocks;
+        };
+
+        const srtBlocks = parseForFallback(srtContent);
         if (srtBlocks.length === 0) return srtContent;
 
-        // 1. Filter out only the blocks that need translation.
         const translatableBlocks = srtBlocks.filter(b => b.isTranslatable);
         const originalTextsToTranslate = translatableBlocks.map(b => b.text.replace(/\n/g, ' '));
-
-        // 2. Translate the filtered text in a single batch.
         const translatedTexts = await translateTextBatch(originalTextsToTranslate, targetLang);
 
         if (originalTextsToTranslate.length !== translatedTexts.length) {
@@ -145,14 +144,11 @@ const translateSrtViaGoogleFallback = async (srtContent: string, targetLang: str
             return null;
         }
 
-        // 3. Create a map of original text to translated text for easy lookup.
         const translationMap = new Map<string, string>();
         originalTextsToTranslate.forEach((original, index) => {
             translationMap.set(original, translatedTexts[index]);
         });
 
-        // 4. Update the original `srtBlocks` array. For each block, if it was marked
-        //    as translatable, replace its text with the translation from the map.
         const finalSrtBlocks = srtBlocks.map(block => {
             if (block.isTranslatable) {
                 const originalKey = block.text.replace(/\n/g, ' ');
@@ -161,14 +157,12 @@ const translateSrtViaGoogleFallback = async (srtContent: string, targetLang: str
                     return { ...block, text: translatedText };
                 }
             }
-            return block; // Return the original block if not translatable or not found in map
+            return block;
         });
         
-        // 5. Reconstruct the full SRT file from the updated blocks.
         return reconstructSrt(finalSrtBlocks);
-
     } catch (error) {
         console.error("Error translating SRT content:", error);
-        return null; // Return null on failure
+        return null;
     }
 };
