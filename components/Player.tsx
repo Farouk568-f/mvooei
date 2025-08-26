@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Hls from 'hls.js';
-import { Movie, Episode, SubtitleTrack, SubtitleSettings, StreamLink, VideoFilters } from '../types';
+import { Movie, Episode, SubtitleTrack, SubtitleSettings, StreamLink } from '../types';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { fetchStreamUrl } from '../services/apiService';
@@ -81,20 +81,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         verticalPosition: 0,
         timeOffset: 0,
     };
-
-    const defaultVideoFilters: VideoFilters = {
-        brightness: 0,
-        contrast: 0,
-        saturation: 0,
-        sharpness: 0,
-        hue: 0,
-        gamma: 1.0,
-        enabled: false,
-    };
     
     const [isLocked, setIsLocked] = useState(false);
     const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>(() => getScreenSpecificData('subtitleSettings', defaultSubtitleSettings));
-    const [videoFilters, setVideoFilters] = useState<VideoFilters>(() => getScreenSpecificData('videoFilters', defaultVideoFilters));
 
     const combinedRef = useCallback((node: HTMLVideoElement | null) => {
         (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = node;
@@ -185,19 +174,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         }
     }, [nextEpisode, onEpisodeSelect]);
 
-    const resetVideoFilters = useCallback(() => {
-        setVideoFilters(defaultVideoFilters);
-        setScreenSpecificData('videoFilters', defaultVideoFilters);
-    }, [setScreenSpecificData]);
-
-    const updateVideoFilters = useCallback((updater: (prev: VideoFilters) => VideoFilters) => {
-        setVideoFilters(prev => {
-            const next = updater(prev);
-            setScreenSpecificData('videoFilters', next);
-            return next;
-        });
-    }, [setScreenSpecificData]);
-
     useEffect(() => {
         const styleId = 'custom-subtitle-styles';
         let styleElement = document.getElementById(styleId) as HTMLStyleElement;
@@ -227,35 +203,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         styleElement.textContent = css;
     
     }, [subtitleSettings]);
-
-    // Apply video filters
-    useEffect(() => {
-        if (!videoRef.current) return;
-        
-        const video = videoRef.current;
-        
-        if (videoFilters.enabled) {
-            // Apply CSS filters
-            const filterString = [
-                `brightness(${100 + videoFilters.brightness}%)`,
-                `contrast(${100 + videoFilters.contrast}%)`,
-                `saturate(${100 + videoFilters.saturation}%)`,
-                `hue-rotate(${videoFilters.hue}deg)`,
-                `contrast(${videoFilters.gamma})`,
-            ].join(' ');
-            
-            video.style.filter = filterString;
-            
-            // Apply sharpness using CSS backdrop-filter (limited support)
-            if (videoFilters.sharpness > 0) {
-                video.style.backdropFilter = `contrast(${100 + videoFilters.sharpness}%)`;
-            }
-        } else {
-            // Reset filters
-            video.style.filter = '';
-            video.style.backdropFilter = '';
-        }
-    }, [videoFilters]);
 
     useEffect(() => {
         const fetchAndSetStreams = async () => {
@@ -986,9 +933,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                             return next;
                         });
                     }}
-                    videoFilters={videoFilters}
-                    onUpdateVideoFilters={updateVideoFilters}
-                    onResetVideoFilters={resetVideoFilters}
                 />
             )}
         </div>
@@ -1004,7 +948,7 @@ const Controls: React.FC<any> = ({
     handleQualityChange, vttTracks, activeSubtitleLang, handleSubtitleChange,
     fitMode, setFitMode,
     availableStreams, handleStreamChange, currentStream, isTranslating,
-    subtitleSettings, onUpdateSubtitleSettings, videoFilters, onUpdateVideoFilters, onResetVideoFilters
+    subtitleSettings, onUpdateSubtitleSettings
 }) => {
     
     const handleProgressInteraction = (e: React.MouseEvent | React.TouchEvent, isDragging: boolean) => {
@@ -1193,122 +1137,6 @@ const Controls: React.FC<any> = ({
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    {/* Video Filters */}
-                                    <div className="mt-6 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-sm font-semibold opacity-80">{t('videoFilters', { defaultValue: 'Video Filters' })}</h4>
-                                            <div className="flex items-center gap-2">
-                                                <button 
-                                                    onClick={() => onUpdateVideoFilters(prev => ({ ...prev, enabled: !prev.enabled }))}
-                                                    className={`px-3 py-1 rounded text-xs ${videoFilters.enabled ? 'bg-green-600' : 'bg-gray-600'}`}
-                                                >
-                                                    {videoFilters.enabled ? t('enableFilters', { defaultValue: 'ON' }) : t('enableFilters', { defaultValue: 'OFF' })}
-                                                </button>
-                                                <button 
-                                                    onClick={onResetVideoFilters}
-                                                    className="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700"
-                                                >
-                                                    {t('resetFilters', { defaultValue: 'Reset' })}
-                                                </button>
-                                            </div>
-                                        </div>
-                                        
-                                        {videoFilters.enabled && (
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('brightness', { defaultValue: 'Brightness' })}</span>
-                                                        <span>{videoFilters.brightness}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={-100} 
-                                                        max={100} 
-                                                        value={videoFilters.brightness} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, brightness: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                                
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('contrast', { defaultValue: 'Contrast' })}</span>
-                                                        <span>{videoFilters.contrast}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={-100} 
-                                                        max={100} 
-                                                        value={videoFilters.contrast} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, contrast: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                                
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('saturation', { defaultValue: 'Saturation' })}</span>
-                                                        <span>{videoFilters.saturation}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={-100} 
-                                                        max={100} 
-                                                        value={videoFilters.saturation} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, saturation: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                                
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('sharpness', { defaultValue: 'Sharpness' })}</span>
-                                                        <span>{videoFilters.sharpness}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={0} 
-                                                        max={100} 
-                                                        value={videoFilters.sharpness} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, sharpness: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                                
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('hue', { defaultValue: 'Hue' })}</span>
-                                                        <span>{videoFilters.hue}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={-180} 
-                                                        max={180} 
-                                                        value={videoFilters.hue} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, hue: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                                
-                                                <div>
-                                                    <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                        <span>{t('gamma', { defaultValue: 'Gamma' })}</span>
-                                                        <span>{videoFilters.gamma.toFixed(1)}</span>
-                                                    </div>
-                                                    <input 
-                                                        type="range" 
-                                                        min={0.1} 
-                                                        max={2.0} 
-                                                        step={0.1}
-                                                        value={videoFilters.gamma} 
-                                                        onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, gamma: Number(e.target.value) }))} 
-                                                        className="w-full" 
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
                                 </SideSheet>
                             )}
                             <button onClick={() => handlePopoverToggle('speed')} className="w-8 text-center relative">{playbackRate}x
@@ -1340,122 +1168,6 @@ const Controls: React.FC<any> = ({
                                                         </button>
                                                     ))}
                                                 </div>
-                                                
-                                                {/* Video Filters in Quality Section */}
-                                                <div className="mt-6 space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <h4 className="text-sm font-semibold opacity-80">{t('videoFilters', { defaultValue: 'Video Filters' })}</h4>
-                                                        <div className="flex items-center gap-2">
-                                                            <button 
-                                                                onClick={() => onUpdateVideoFilters(prev => ({ ...prev, enabled: !prev.enabled }))}
-                                                                className={`px-3 py-1 rounded text-xs ${videoFilters.enabled ? 'bg-green-600' : 'bg-gray-600'}`}
-                                                            >
-                                                                {videoFilters.enabled ? t('enableFilters', { defaultValue: 'ON' }) : t('enableFilters', { defaultValue: 'OFF' })}
-                                                            </button>
-                                                            <button 
-                                                                onClick={onResetVideoFilters}
-                                                                className="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700"
-                                                            >
-                                                                {t('resetFilters', { defaultValue: 'Reset' })}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {videoFilters.enabled && (
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('brightness', { defaultValue: 'Brightness' })}</span>
-                                                                    <span>{videoFilters.brightness}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.brightness} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, brightness: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('contrast', { defaultValue: 'Contrast' })}</span>
-                                                                    <span>{videoFilters.contrast}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.contrast} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, contrast: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('saturation', { defaultValue: 'Saturation' })}</span>
-                                                                    <span>{videoFilters.saturation}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.saturation} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, saturation: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('sharpness', { defaultValue: 'Sharpness' })}</span>
-                                                                    <span>{videoFilters.sharpness}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={0} 
-                                                                    max={100} 
-                                                                    value={videoFilters.sharpness} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, sharpness: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('hue', { defaultValue: 'Hue' })}</span>
-                                                                    <span>{videoFilters.hue}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-180} 
-                                                                    max={180} 
-                                                                    value={videoFilters.hue} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, hue: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('gamma', { defaultValue: 'Gamma' })}</span>
-                                                                    <span>{videoFilters.gamma.toFixed(1)}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={0.1} 
-                                                                    max={2.0} 
-                                                                    step={0.1}
-                                                                    value={videoFilters.gamma} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, gamma: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
                                             </>
                                         ) : (
                                             <>
@@ -1469,122 +1181,6 @@ const Controls: React.FC<any> = ({
                                                         ))
                                                     ) : (
                                                         <button disabled className="cursor-not-allowed opacity-50 text-left px-3 py-2 rounded-md">{t('auto')}</button>
-                                                    )}
-                                                </div>
-                                                
-                                                {/* Video Filters in Streams Section */}
-                                                <div className="mt-6 space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <h4 className="text-sm font-semibold opacity-80">{t('videoFilters', { defaultValue: 'Video Filters' })}</h4>
-                                                        <div className="flex items-center gap-2">
-                                                            <button 
-                                                                onClick={() => onUpdateVideoFilters(prev => ({ ...prev, enabled: !prev.enabled }))}
-                                                                className={`px-3 py-1 rounded text-xs ${videoFilters.enabled ? 'bg-green-600' : 'bg-gray-600'}`}
-                                                            >
-                                                                {videoFilters.enabled ? t('enableFilters', { defaultValue: 'ON' }) : t('enableFilters', { defaultValue: 'OFF' })}
-                                                            </button>
-                                                            <button 
-                                                                onClick={onResetVideoFilters}
-                                                                className="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700"
-                                                            >
-                                                                {t('resetFilters', { defaultValue: 'Reset' })}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {videoFilters.enabled && (
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('brightness', { defaultValue: 'Brightness' })}</span>
-                                                                    <span>{videoFilters.brightness}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.brightness} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, brightness: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('contrast', { defaultValue: 'Contrast' })}</span>
-                                                                    <span>{videoFilters.contrast}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.contrast} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, contrast: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('saturation', { defaultValue: 'Saturation' })}</span>
-                                                                    <span>{videoFilters.saturation}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-100} 
-                                                                    max={100} 
-                                                                    value={videoFilters.saturation} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, saturation: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('sharpness', { defaultValue: 'Sharpness' })}</span>
-                                                                    <span>{videoFilters.sharpness}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={0} 
-                                                                    max={100} 
-                                                                    value={videoFilters.sharpness} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, sharpness: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('hue', { defaultValue: 'Hue' })}</span>
-                                                                    <span>{videoFilters.hue}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={-180} 
-                                                                    max={180} 
-                                                                    value={videoFilters.hue} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, hue: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                            
-                                                            <div>
-                                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1">
-                                                                    <span>{t('gamma', { defaultValue: 'Gamma' })}</span>
-                                                                    <span>{videoFilters.gamma.toFixed(1)}</span>
-                                                                </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min={0.1} 
-                                                                    max={2.0} 
-                                                                    step={0.1}
-                                                                    value={videoFilters.gamma} 
-                                                                    onChange={(e) => onUpdateVideoFilters(prev => ({ ...prev, gamma: Number(e.target.value) }))} 
-                                                                    className="w-full" 
-                                                                />
-                                                            </div>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </>
