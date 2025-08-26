@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useProfile } from '../contexts/ProfileContext';
@@ -90,10 +91,10 @@ const ItemCard: React.FC<{ item: Movie | FavoriteItem, onDelete?: (item: Movie |
                     srcSet={posterPath ? `${IMAGE_BASE_URL}w342${posterPath} 342w, ${IMAGE_BASE_URL}${POSTER_SIZE}${posterPath} 500w` : undefined}
                     sizes="(max-width: 639px) 46vw, (max-width: 767px) 30vw, (max-width: 1023px) 22vw, (max-width: 1279px) 18vw, 15vw"
                     alt={title}
-                    className="object-cover w-full aspect-[2/3] filter brightness-105"
+                    className="object-cover w-full aspect-[2/3] filter brightness-105 saturate-105"
                     loading="lazy"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
                  {onDelete && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(item); }}
@@ -119,6 +120,151 @@ const ItemCard: React.FC<{ item: Movie | FavoriteItem, onDelete?: (item: Movie |
         </div>
     );
 };
+
+const RankingItem: React.FC<{item: Movie, rank: number, genreMap: Map<number,string>}> = ({ item, rank, genreMap }) => {
+    const navigate = useNavigate();
+    const type = item.media_type || (item.title ? 'movie' : 'tv');
+    const genreIds = (item as any).genre_ids || [];
+    const getRankColor = (r: number) => {
+        if (r === 1) return 'text-[#FE2980]';
+        if (r === 2) return 'text-[#FC603D]';
+        if (r === 3) return 'text-[#FFA424]';
+        return 'text-zinc-400';
+    };
+
+    return (
+        <li className="flex items-center gap-2" onClick={() => navigate(`/details/${type}/${item.id}`)}>
+            <span className={`text-base font-bold w-6 text-left flex-shrink-0 ${getRankColor(rank)}`}>{rank}</span>
+            <img src={`${IMAGE_BASE_URL}w342${item.poster_path}`} alt={item.title || item.name} className="w-14 h-[78px] rounded object-cover flex-shrink-0" />
+            <div className="flex-1 overflow-hidden">
+                <h3 className="text-white text-sm font-medium leading-tight line-clamp-2">{item.title || item.name}</h3>
+                <div className="flex gap-1 mt-2">
+                    {genreIds.slice(0, 2).map((id: number) => genreMap.get(id) && (
+                        <span key={id} className="bg-white/10 text-white text-[10px] leading-4 px-1 rounded-sm whitespace-nowrap">{genreMap.get(id)}</span>
+                    ))}
+                </div>
+            </div>
+        </li>
+    );
+};
+
+
+const RankingDisplay: React.FC<{trendingMovies: Movie[], topTv: Movie[], genreMap: Map<number, string>}> = ({ trendingMovies, topTv, genreMap }) => {
+    const { t, dir } = useTranslation();
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const dragState = useRef({ isDragging: false, startX: 0, currentTranslate: 0 });
+
+    useEffect(() => {
+        if (wrapperRef.current && containerRef.current) {
+            const panelWidth = containerRef.current.offsetWidth;
+            const xOffset = dir === 'rtl' ? currentIndex * panelWidth : -currentIndex * panelWidth;
+            wrapperRef.current.style.transition = 'transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1)';
+            wrapperRef.current.style.transform = `translateX(${xOffset}px)`;
+        }
+    }, [currentIndex, dir]);
+    
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if ((e as React.MouseEvent).button === 2) return;
+        dragState.current.isDragging = true;
+        dragState.current.startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        if (wrapperRef.current) {
+            wrapperRef.current.style.transition = 'none';
+            const transformMatrix = new DOMMatrix(getComputedStyle(wrapperRef.current).transform);
+            dragState.current.currentTranslate = transformMatrix.m41;
+        }
+    };
+
+    const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!dragState.current.isDragging) return;
+        const currentX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const deltaX = currentX - dragState.current.startX;
+        if (wrapperRef.current) {
+            wrapperRef.current.style.transform = `translateX(${dragState.current.currentTranslate + deltaX}px)`;
+        }
+    };
+    
+    const handleDragEnd = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!dragState.current.isDragging) return;
+        dragState.current.isDragging = false;
+        
+        const endX = 'changedTouches' in e ? e.changedTouches[0].clientX : e.clientX;
+        const movedBy = endX - dragState.current.startX;
+        const threshold = 50;
+
+        if (dir !== 'rtl') {
+            if (movedBy < -threshold && currentIndex < 1) setCurrentIndex(1);
+            if (movedBy > threshold && currentIndex > 0) setCurrentIndex(0);
+        } else {
+            if (movedBy > threshold && currentIndex < 1) setCurrentIndex(1);
+            if (movedBy < -threshold && currentIndex > 0) setCurrentIndex(0);
+        }
+    };
+
+    const panels = [
+        {
+            title: "Must-Watch",
+            iconLeft: "https://static.novelhubapp.com/novelStatic/public/_nuxt/must-read-left.Beu-g9fD.svg",
+            iconRight: "https://static.novelhubapp.com/novelStatic/public/_nuxt/must-read-right.DHlSFBns.svg",
+            items: trendingMovies,
+            bg: 'linear-gradient(180deg, #413162 0%, #201B29 51.25%)',
+            eclipse: 'linear-gradient(182deg, #25183E 1.6%, rgba(37, 24, 62, 0.00) 36.75%)'
+        },
+        {
+            title: "TOP",
+            iconLeft: "https://static.novelhubapp.com/novelStatic/public/_nuxt/trending-left.BRA2eCxa.svg",
+            iconRight: "https://static.novelhubapp.com/novelStatic/public/_nuxt/trending-right.DAuHZOqO.svg",
+            items: topTv,
+            bg: 'linear-gradient(180deg, #323961 0%, #1D2036 50.15%)',
+            eclipse: 'linear-gradient(182deg, #20243F 1.6%, rgba(32, 36, 63, 0.00) 36.75%)'
+        }
+    ];
+
+    if(trendingMovies.length === 0 || topTv.length === 0) return null;
+
+    return (
+        <div className="my-4">
+            <header className="flex justify-between items-center px-4 pb-3">
+                <h1 className="text-white text-xl font-semibold">Ranking</h1>
+                <a href="#" className="flex items-center gap-1 text-zinc-400 text-sm">
+                    <span>View all</span>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.63649 1.40669C3.44689 1.60745 3.45593 1.9239 3.65669 2.11351L7.7718 6L3.65669 9.88649C3.45593 10.0761 3.44689 10.3926 3.63649 10.5933C3.8261 10.7941 4.14255 10.8031 4.34331 10.6135L8.84331 6.36351C8.94332 6.26905 9 6.13757 9 6C9 5.86244 8.94332 5.73095 8.84331 5.63649L4.34331 1.38649C4.14255 1.19689 3.8261 1.20593 3.63649 1.40669Z" fill="#9BA0A8"></path></svg>
+                </a>
+            </header>
+            <div
+                ref={containerRef}
+                className="w-full overflow-hidden"
+                onMouseDown={handleDragStart} onMouseMove={handleDragMove} onMouseUp={handleDragEnd} onMouseLeave={handleDragEnd}
+                onTouchStart={handleDragStart} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd}
+            >
+                <div ref={wrapperRef} className="flex w-[200%] px-2">
+                    {panels.map((panel, index) => (
+                        <div key={index} className="w-1/2 px-2 flex-shrink-0">
+                            <div className="rounded-lg h-[320px] overflow-hidden p-4 relative" style={{ background: panel.bg }}>
+                                <div className="absolute rounded-full bottom-[49%] h-[303px] w-[303px] z-[1] right-8" style={{ background: panel.eclipse }}></div>
+                                <header className="flex justify-between items-center h-[46px] relative z-[2] -mt-2">
+                                    <h2 className="text-white text-sm font-semibold flex items-center gap-1.5">
+                                        <img src={panel.iconLeft} alt="" />
+                                        <span>{panel.title}</span>
+                                        <img src={panel.iconRight} alt="" />
+                                    </h2>
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.63649 1.40669C3.44689 1.60745 3.45593 1.9239 3.65669 2.11351L7.7718 6L3.65669 9.88649C3.45593 10.0761 3.44689 10.3926 3.63649 10.5933C3.8261 10.7941 4.14255 10.8031 4.34331 10.6135L8.84331 6.36351C8.94332 6.26905 9 6.13757 9 6C9 5.86244 8.94332 5.73095 8.84331 5.63649L4.34331 1.38649C4.14255 1.19689 3.8261 1.20593 3.63649 1.40669Z" fill="#9BA0A8"></path></svg>
+                                </header>
+                                <div className="relative z-[2]">
+                                    <ul className="flex flex-col gap-3">
+                                        {panel.items.map((item, i) => <RankingItem key={item.id} item={item} rank={i + 1} genreMap={genreMap} />)}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 const SuggestionCarousel: React.FC<{ title: string; items: Movie[] }> = React.memo(({ title, items }) => {
     if (!items || items.length === 0) return null;
@@ -186,7 +332,7 @@ const GenericPage: React.FC<{
     pageType: 'favorites' | 'downloads' | 'search' | 'all' | 'subscriptions' | 'filter',
     title: string
 }> = ({ pageType, title }) => {
-    const { getScreenSpecificData, toggleFavorite, addLastSearch, clearLastSearches, removeDownload } = useProfile();
+    const { getScreenSpecificData, toggleFavorite, addLastSearch, clearLastSearches, removeDownload, isKidsMode } = useProfile();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
@@ -200,6 +346,8 @@ const GenericPage: React.FC<{
     const [searchGenreMap, setSearchGenreMap] = useState<Map<number, string>>(new Map());
     const [popularSearches, setPopularSearches] = useState<Movie[]>([]);
     const [bestSeries, setBestSeries] = useState<Movie[]>([]);
+    const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
+    const [topTv, setTopTv] = useState<Movie[]>([]);
     const lastSearches = getScreenSpecificData('lastSearches', []);
     const [showSuggestions, setShowSuggestions] = useState(true);
 
@@ -215,8 +363,8 @@ const GenericPage: React.FC<{
     const [filterResults, setFilterResults] = useState<Movie[]>([]);
     const [filterPage, setFilterPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
-    const observer = useRef<IntersectionObserver>();
-    const lastElementRef = useCallback((node: HTMLDivElement) => {
+    const observer = useRef<IntersectionObserver | null>(null);
+    const lastElementRef = useCallback((node: HTMLDivElement | null) => {
         if (loading) return;
         if (observer.current) observer.current.disconnect();
         observer.current = new IntersectionObserver(entries => {
@@ -303,12 +451,15 @@ const GenericPage: React.FC<{
             fetchGenres().then(setSearchGenreMap);
             const fetchSuggestions = async () => {
                 try {
-                    const [popularRes, seriesRes] = await Promise.all([
+                    const [popularRes, seriesRes, trendingMovieRes] = await Promise.all([
                         fetchFromTMDB('/trending/all/week'),
-                        fetchFromTMDB('/tv/top_rated')
+                        fetchFromTMDB('/tv/top_rated'),
+                        fetchFromTMDB('/trending/movie/week')
                     ]);
                     setPopularSearches(popularRes.results?.filter((i: Movie) => i.poster_path) || []);
                     setBestSeries(seriesRes.results?.filter((i: Movie) => i.poster_path) || []);
+                    setTrendingMovies(trendingMovieRes.results?.filter((i: Movie) => i.poster_path) || []);
+                    setTopTv(seriesRes.results?.filter((i: Movie) => i.poster_path) || []);
                 } catch (error) {
                     console.error("Failed to fetch search page suggestions:", error);
                 }
@@ -334,17 +485,33 @@ const GenericPage: React.FC<{
                 case 'all':
                     if (category) {
                         let endpoint = '';
+                        let mediaTypeForKids: 'movie' | 'tv' | null = null;
+
                         switch(category) {
                             case 'series':
                                 endpoint = '/tv/popular';
+                                mediaTypeForKids = 'tv';
                                 break;
                             case 'trending_week':
                                 endpoint = '/trending/movie/week';
+                                mediaTypeForKids = 'movie';
                                 break;
                             default:
                                 endpoint = `/movie/${category}`;
+                                mediaTypeForKids = 'movie';
                         }
-                        const allRes = await fetchFromTMDB(endpoint);
+                        
+                        let params = {};
+                        if (isKidsMode && mediaTypeForKids) {
+                            endpoint = `/discover/${mediaTypeForKids}`;
+                            params = {
+                                'certification_country': 'US',
+                                'certification.lte': 'PG',
+                                'with_genres': mediaTypeForKids === 'tv' ? '10762,16' : '16,10751'
+                            };
+                        }
+
+                        const allRes = await fetchFromTMDB(endpoint, params);
                         setContent(allRes.results || []);
                     }
                     break;
@@ -354,7 +521,7 @@ const GenericPage: React.FC<{
         } finally {
             setLoading(false);
         }
-    }, [pageType, category, getScreenSpecificData]);
+    }, [pageType, category, getScreenSpecificData, isKidsMode]);
 
     useEffect(() => {
         loadContent();
@@ -367,10 +534,10 @@ const GenericPage: React.FC<{
         debouncedSearch(e.target.value);
     };
 
-      const handleFavoriteDelete = (item: Movie | FavoriteItem) => {
-    toggleFavorite(item);
-    setContent(prev => prev.filter(c => c.id !== item.id));
-  };
+    const handleFavoriteDelete = (item: Movie | FavoriteItem) => {
+        toggleFavorite(item);
+        setContent(prev => prev.filter(c => c.id !== item.id));
+    };
 
   const handleDownloadPlay = (item: DownloadItem) => {
     if (!item.completed) return;
@@ -613,7 +780,11 @@ const GenericPage: React.FC<{
 
                                 <div className={`transition-all duration-300 ease-out overflow-hidden ${isIdle || (hasResults && showSuggestions) ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                     <div className="animate-fade-in-up">
-                                        {hasResults && <div className="border-t border-zinc-800 mx-4 my-2"></div>}
+                                        <RankingDisplay
+                                            trendingMovies={trendingMovies.slice(0, 3)}
+                                            topTv={topTv.slice(0, 3)}
+                                            genreMap={searchGenreMap}
+                                        />
                                         <LastSearches 
                                             lastSearches={lastSearches}
                                             onClear={clearLastSearches}

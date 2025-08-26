@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchFromTMDB } from '../services/apiService';
@@ -6,6 +7,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { TranslationKey } from '../translations';
 import { IMAGE_BASE_URL, POSTER_SIZE } from '../contexts/constants';
 import { BottomNavbar } from '../components/Layout';
+import { useProfile } from '../contexts/ProfileContext';
 
 const MovieCard: React.FC<{ movie: Movie }> = ({ movie }) => {
   const navigate = useNavigate();
@@ -182,17 +184,27 @@ const MoviesPage: React.FC = () => {
     const [data, setData] = useState({ popular: [], topRated: [], upcoming: [], nowPlaying: [] });
     const [loading, setLoading] = useState(true);
     const { t } = useTranslation();
+    const { isKidsMode } = useProfile();
 
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
             try {
+                const kidsParams = isKidsMode ? { 
+                    'certification_country': 'US', 
+                    'certification.lte': 'PG',
+                    'with_genres': '16,10751' // Animation & Family
+                } : {};
+                
+                const endpointSuffix = isKidsMode ? '/discover/movie' : '/movie';
+
                 const [popularRes, topRatedRes, upcomingRes, nowPlayingRes] = await Promise.all([
-                    fetchFromTMDB('/movie/popular'),
-                    fetchFromTMDB('/movie/top_rated'),
-                    fetchFromTMDB('/movie/upcoming'),
-                    fetchFromTMDB('/movie/now_playing')
+                    fetchFromTMDB(`${endpointSuffix}/${isKidsMode ? '' : 'popular'}`, kidsParams),
+                    fetchFromTMDB(`${endpointSuffix}/${isKidsMode ? '' : 'top_rated'}`, { ...kidsParams, sort_by: 'vote_average.desc' }),
+                    fetchFromTMDB(`${endpointSuffix}/${isKidsMode ? '' : 'upcoming'}`, { ...kidsParams, sort_by: 'primary_release_date.desc' }),
+                    fetchFromTMDB(`${endpointSuffix}/${isKidsMode ? '' : 'now_playing'}`, kidsParams)
                 ]);
+
                 setData({
                     popular: popularRes.results || [],
                     topRated: topRatedRes.results || [],
@@ -206,7 +218,7 @@ const MoviesPage: React.FC = () => {
             }
         };
         fetchData();
-    }, []);
+    }, [isKidsMode]);
 
     return (
         <div className="bg-[#101010] min-h-screen text-white pb-20">

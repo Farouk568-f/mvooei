@@ -7,7 +7,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { fetchStreamUrl } from '../services/apiService';
 import * as Icons from './Icons';
 import { IMAGE_BASE_URL, BACKDROP_SIZE_MEDIUM } from '../contexts/constants';
-// import { translateSrtToArabic } from '../services/aiService';
+import { translateSrtViaGoogle } from '../services/translationService';
 
 interface PlayerProps {
     item: Movie;
@@ -76,8 +76,8 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
     const defaultSubtitleSettings: SubtitleSettings = {
         fontSize: 100,
-        backgroundOpacity: 50,
-        edgeStyle: 'drop-shadow',
+        backgroundOpacity: 0,
+        edgeStyle: 'outline',
         verticalPosition: 0,
         timeOffset: 0,
     };
@@ -128,6 +128,20 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     const isPopoverOpen = activePopover !== null;
     const isPopoverOpenRef = useRef(isPopoverOpen);
     isPopoverOpenRef.current = isPopoverOpen;
+
+    // Proxy helpers to mitigate mid-playback stalls for direct MP4 links
+    const PROXY_PREFIX = (typeof window !== 'undefined' && location?.hostname === 'localhost') ? '' : 'https://prox-q3zt.onrender.com';
+    const isProxiedUrl = useCallback((url: string) => {
+        try {
+            return url.includes('/proxy?url=');
+        } catch {
+            return false;
+        }
+    }, []);
+    const toProxiedUrl = useCallback((url: string) => {
+        if (!PROXY_PREFIX) return `/proxy?url=${encodeURIComponent(url)}`;
+        return `${PROXY_PREFIX}/proxy?url=${encodeURIComponent(url)}`;
+    }, [PROXY_PREFIX]);
 
     const hideControls = useCallback(() => {
         if (!videoRef.current?.paused && !isPopoverOpenRef.current) {
@@ -317,24 +331,47 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 }
             }
 
+            // التحقق من وجود ترجمة عربية أصلية
             const hasArabicSub = processedLangs.has('ar');
-            if (!hasArabicSub && subtitles.length > 0) {
-                const sourceSub = subtitles.find(s => s.language === 'en') || subtitles[0];
+            
+            // إذا كانت اللغة المحددة هي العربية ولا توجد ترجمة عربية أصلية، قم بإنشاء ترجمة تلقائية
+            if (userLanguage === 'ar' && !hasArabicSub && subtitles.length > 0) {
+                // ترتيب أولوية اللغات للترجمة: إنجليزية > فرنسية > أي لغة أخرى
+                const languagePriority = ['en', 'fr', 'es', 'de', 'it'];
+                let sourceSub = null;
+                
+                // البحث عن أفضل ترجمة متاحة للترجمة منها
+                for (const lang of languagePriority) {
+                    sourceSub = subtitles.find(s => s.language === lang);
+                    if (sourceSub) break;
+                }
+                
+                // إذا لم توجد ترجمة من اللغات المفضلة، استخدم أول ترجمة متاحة
+                if (!sourceSub && subtitles.length > 0) {
+                    sourceSub = subtitles[0];
+                }
+                
                 if (sourceSub) {
                     if (active) setIsTranslating(true);
                     try {
+                        console.log(`Attempting to translate subtitles from ${sourceSub.language} to Arabic...`);
                         const sourceRes = await fetch(sourceSub.url);
                         if (sourceRes.ok) {
                             const sourceSrt = await sourceRes.text();
-                            // const translatedSrt = await translateSrtToArabic(sourceSrt);
-                            // if (translatedSrt && active) {
-                            //     const vttUrl = processSrtToVtt(translatedSrt);
-                            //     const aiLangCode = 'ar-ai';
-                            //     newTracks.push({ lang: aiLangCode, url: vttUrl, label: t('arabicAi', {defaultValue: 'Arabic (AI)'}) });
-                            //     if (userLanguage === 'ar') {
-                            //         setActiveSubtitleLang(aiLangCode);
-                            //     }
-                            // }
+                            // ترجمة الترجمة المختارة إلى العربية
+                            const translatedSrt = await translateSrtViaGoogle(sourceSrt, 'ar');
+                            if (translatedSrt && active) {
+                                const vttUrl = processSrtToVtt(translatedSrt);
+                                const aiLangCode = 'ar-ai';
+                                newTracks.push({ 
+                                    lang: aiLangCode, 
+                                    url: vttUrl, 
+                                    label: t('arabicAi') + ` (${t('from')} ${sourceSub.display || sourceSub.language})`
+                                });
+                                console.log("Arabic AI translation created successfully");
+                                // اختر الترجمة العربية المترجمة تلقائياً تلقائياً
+                                setActiveSubtitleLang(aiLangCode);
+                            }
                         }
                     } catch (e) {
                         console.error("Error during AI subtitle translation process", e);
@@ -360,6 +397,23 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             createdUrls.forEach(url => URL.revokeObjectURL(url));
         }
     }, [subtitles, subtitleSettings, t, userLanguage]);
+    
+    // تحسين اختيار الترجمة العربية المترجمة تلقائياً
+    useEffect(() => {
+        if (userLanguage === 'ar' && vttTracks.length > 0) {
+            // البحث عن الترجمة العربية الأصلية أولاً
+            const arabicTrack = vttTracks.find(track => track.lang === 'ar');
+            if (arabicTrack) {
+                setActiveSubtitleLang('ar');
+            } else {
+                // إذا لم توجد ترجمة عربية أصلية، اختر الترجمة العربية المترجمة تلقائياً
+                const arabicAiTrack = vttTracks.find(track => track.lang === 'ar-ai');
+                if (arabicAiTrack) {
+                    setActiveSubtitleLang('ar-ai');
+                }
+            }
+        }
+    }, [vttTracks, userLanguage]);
     
     useEffect(() => {
         const video = videoRef.current;
@@ -424,12 +478,14 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
                 // Listen for fragment buffering to calculate live speed for HLS streams
                 hls.on(Hls.default.Events.FRAG_BUFFERED, (event, data) => {
-                    const stats = data.stats;
-                    // const durationMs = stats.tload - stats.tfirst;
-                    // if (durationMs > 0) {
-                    //     const speedKbps = (stats.loaded / 1024) / (durationMs / 1000);
-                    //     setLiveSpeed(speedKbps);
-                    // }
+                    const stats = data.stats as any;
+                    if (stats && typeof stats.tload === 'number' && typeof stats.tfirst === 'number') {
+                        const durationMs = stats.tload - stats.tfirst;
+                        if (durationMs > 0) {
+                            const speedKbps = (stats.loaded / 1024) / (durationMs / 1000);
+                            setLiveSpeed(speedKbps);
+                        }
+                    }
                 });
                 
                 hls.loadSource(sourceUrl);
@@ -513,6 +569,41 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             } else {
                 video.addEventListener('loadedmetadata', attemptPlay, { once: true });
             }
+
+            // If the direct file stalls mid-playback, switch to proxied URL to improve stability
+            let stallTimer: ReturnType<typeof setTimeout> | null = null;
+            const handleWaiting = () => {
+                if (stallTimer) clearTimeout(stallTimer);
+                stallTimer = setTimeout(() => {
+                    // Only switch if not already proxied and stream still the same
+                    const current = currentStream;
+                    if (current && !isProxiedUrl(current.url)) {
+                        const proxied = { ...current, url: toProxiedUrl(current.url) };
+                        setCurrentStream(proxied);
+                    }
+                }, 8000); // 8s of continuous waiting considered a stall
+            };
+            const handlePlayingClear = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
+            const handleErrorFallback = () => {
+                const current = currentStream;
+                if (current && !isProxiedUrl(current.url)) {
+                    const proxied = { ...current, url: toProxiedUrl(current.url) };
+                    setCurrentStream(proxied);
+                }
+            };
+            video.addEventListener('waiting', handleWaiting);
+            video.addEventListener('playing', handlePlayingClear);
+            video.addEventListener('stalled', handleWaiting);
+            video.addEventListener('error', handleErrorFallback, { once: true });
+
+            // Cleanup listeners
+            return () => {
+                if (stallTimer) clearTimeout(stallTimer);
+                video.removeEventListener('waiting', handleWaiting);
+                video.removeEventListener('playing', handlePlayingClear);
+                video.removeEventListener('stalled', handleWaiting);
+                video.removeEventListener('error', handleErrorFallback as any);
+            };
         }
     
         return () => {
@@ -834,6 +925,14 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                     availableStreams={availableStreams}
                     handleStreamChange={handleStreamChange}
                     isTranslating={isTranslating}
+                    subtitleSettings={subtitleSettings}
+                    onUpdateSubtitleSettings={(updater: (prev: SubtitleSettings) => SubtitleSettings) => {
+                        setSubtitleSettings(prev => {
+                            const next = updater(prev);
+                            setScreenSpecificData('subtitleSettings', next);
+                            return next;
+                        });
+                    }}
                 />
             )}
         </div>
@@ -848,7 +947,8 @@ const Controls: React.FC<any> = ({
     playbackRate, setPlaybackRate, videoRef, availableQualities, currentQuality, autoLevelIndex,
     handleQualityChange, vttTracks, activeSubtitleLang, handleSubtitleChange,
     fitMode, setFitMode,
-    availableStreams, handleStreamChange, currentStream, isTranslating
+    availableStreams, handleStreamChange, currentStream, isTranslating,
+    subtitleSettings, onUpdateSubtitleSettings
 }) => {
     
     const handleProgressInteraction = (e: React.MouseEvent | React.TouchEvent, isDragging: boolean) => {
@@ -993,14 +1093,52 @@ const Controls: React.FC<any> = ({
                         <div className="flex items-center gap-x-4 text-sm font-semibold">
                             <button onClick={() => setFitMode((f: string) => f === 'contain' ? 'cover' : 'contain')} className="flex items-center gap-2"><i className="fa-solid fa-expand text-lg"></i> {t('fit')}</button>
                             <button onClick={() => handlePopoverToggle('language')} className="flex items-center gap-2 relative"><Icons.LanguageIcon className="w-5 h-5" /> {t('language')}
-                                 {activePopover === 'language' && (
-                                    <Popover onClose={() => setActivePopover(null)}>
-                                        <button onClick={() => handleSubtitleChange(null)} className={!activeSubtitleLang ? 'bg-white/20' : ''}>{t('off')}</button>
-                                        {vttTracks.map((sub: any) => <button key={sub.lang} onClick={() => handleSubtitleChange(sub.lang)} className={activeSubtitleLang === sub.lang ? 'bg-white/20' : ''}>{sub.label}</button>)}
-                                        {isTranslating && <div className="text-center text-xs p-2 text-gray-300 animate-pulse">{t('translating', { defaultValue: 'Translating...'})}</div>}
-                                    </Popover>
-                                 )}
                             </button>
+                            {activePopover === 'language' && (
+                                <SideSheet onClose={() => setActivePopover(null)} title={t('language')}>
+                                    <div className="space-y-2">
+                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitles', { defaultValue: 'Subtitles' })}</h4>
+                                        <div className="flex flex-col gap-1">
+                                            <button onClick={() => handleSubtitleChange(null)} className={`text-left px-3 py-2 rounded-md ${!activeSubtitleLang ? 'bg-white/10' : 'hover:bg-white/5'}`}>{t('off')}</button>
+                                            {vttTracks.map((sub: any) => (
+                                                <button key={sub.lang} onClick={() => handleSubtitleChange(sub.lang)} className={`text-left px-3 py-2 rounded-md ${activeSubtitleLang === sub.lang ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                    {sub.label}
+                                                </button>
+                                            ))}
+                                            {isTranslating && <div className="text-center text-xs p-2 text-gray-300 animate-pulse">{t('translating', { defaultValue: 'Translating...'})}</div>}
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 space-y-3">
+                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitleSettings', { defaultValue: 'Subtitle Settings' })}</h4>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('fontSize', { defaultValue: 'Font Size' })}</span><span>{subtitleSettings.fontSize}%</span></div>
+                                                <input type="range" min={50} max={200} value={subtitleSettings.fontSize} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, fontSize: Number(e.target.value) }))} className="w-full" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('backgroundOpacity', { defaultValue: 'Background Opacity' })}</span><span>{subtitleSettings.backgroundOpacity}%</span></div>
+                                                <input type="range" min={0} max={100} value={subtitleSettings.backgroundOpacity} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, backgroundOpacity: Number(e.target.value) }))} className="w-full" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('edgeStyle', { defaultValue: 'Edge Style' })}</span></div>
+                                                <select value={subtitleSettings.edgeStyle} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, edgeStyle: e.target.value }))} className="w-full bg-white/10 rounded-md px-3 py-2">
+                                                    <option value="none">{t('none', { defaultValue: 'None' })}</option>
+                                                    <option value="drop-shadow">{t('dropShadow', { defaultValue: 'Drop Shadow' })}</option>
+                                                    <option value="outline">{t('outline', { defaultValue: 'Outline' })}</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('verticalPosition', { defaultValue: 'Vertical Position' })}</span><span>{subtitleSettings.verticalPosition}</span></div>
+                                                <input type="range" min={-20} max={20} value={subtitleSettings.verticalPosition} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, verticalPosition: Number(e.target.value) }))} className="w-full" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('timeOffset', { defaultValue: 'Time Offset (s)' })}</span><span>{subtitleSettings.timeOffset}s</span></div>
+                                                <input type="range" min={-5} max={5} step={0.5} value={subtitleSettings.timeOffset} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, timeOffset: Number(e.target.value) }))} className="w-full" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </SideSheet>
+                            )}
                             <button onClick={() => handlePopoverToggle('speed')} className="w-8 text-center relative">{playbackRate}x
                                 {activePopover === 'speed' && (
                                      <Popover onClose={() => setActivePopover(null)}>
@@ -1012,23 +1150,44 @@ const Controls: React.FC<any> = ({
                                 <div className="flex items-center justify-center">
                                     <Icons.QualityIcon className="w-5 h-5" />
                                 </div>
-                                 {activePopover === 'quality' && (
-                                     <Popover onClose={() => setActivePopover(null)}>
+                            </button>
+                            {activePopover === 'quality' && (
+                                <SideSheet onClose={() => setActivePopover(null)} title={t('quality')}>
+                                    <div className="space-y-2">
                                         {hasHlsQualities ? (
                                             <>
-                                                <button onClick={() => handleQualityChange(-1)} className={currentQuality === -1 ? 'bg-white/20' : ''}>{t('auto')}</button>
-                                                {sortedQualities.map((level: any) => <button key={level.originalIndex} onClick={() => handleQualityChange(level.originalIndex)} className={currentQuality === level.originalIndex ? 'bg-white/20' : ''}>{level.height}p</button>)}
+                                                <h4 className="text-sm font-semibold opacity-80">{t('mode', { defaultValue: 'Mode' })}</h4>
+                                                <div className="flex flex-col gap-1">
+                                                    <button onClick={() => handleQualityChange(-1)} className={`text-left px-3 py-2 rounded-md ${currentQuality === -1 ? 'bg-white/10' : 'hover:bg-white/5'}`}>{t('auto')}</button>
+                                                </div>
+                                                <h4 className="text-sm font-semibold opacity-80 mt-3">{t('qualities', { defaultValue: 'Qualities' })}</h4>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {sortedQualities.map((level: any) => (
+                                                        <button key={level.originalIndex} onClick={() => handleQualityChange(level.originalIndex)} className={`text-left px-3 py-2 rounded-md ${currentQuality === level.originalIndex ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                            {level.height}p
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </>
                                         ) : (
-                                            availableStreams.length > 1 ? availableStreams.map((stream: StreamLink) => (
-                                                <button key={stream.url} onClick={() => handleStreamChange(stream)} className={currentStream?.url === stream.url ? 'bg-white/20' : ''}>
-                                                    {stream.quality}
-                                                </button>
-                                            )) : <button disabled className="cursor-not-allowed opacity-50">{t('auto')}</button>
+                                            <>
+                                                <h4 className="text-sm font-semibold opacity-80">{t('streams', { defaultValue: 'Streams' })}</h4>
+                                                <div className="flex flex-col gap-1">
+                                                    {availableStreams.length > 0 ? (
+                                                        availableStreams.map((stream: StreamLink) => (
+                                                            <button key={stream.url} onClick={() => handleStreamChange(stream)} className={`text-left px-3 py-2 rounded-md ${currentStream?.url === stream.url ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                                {stream.quality}
+                                                            </button>
+                                                        ))
+                                                    ) : (
+                                                        <button disabled className="cursor-not-allowed opacity-50 text-left px-3 py-2 rounded-md">{t('auto')}</button>
+                                                    )}
+                                                </div>
+                                            </>
                                         )}
-                                     </Popover>
-                                 )}
-                            </button>
+                                    </div>
+                                </SideSheet>
+                            )}
                             <button onClick={toggleFullscreen} className="text-xl w-8 text-center">
                                 <Icons.ExitFullscreenIcon className="w-5 h-5" />
                             </button>
@@ -1053,5 +1212,28 @@ const Popover: React.FC<{onClose: ()=>void, children: React.ReactNode}> = ({onCl
         </div>
     )
 }
+
+const SideSheet: React.FC<{ onClose: () => void, title: string, children: React.ReactNode }> = ({ onClose, title, children }) => {
+    const [closing, setClosing] = React.useState(false);
+    const requestClose = () => {
+        if (closing) return;
+        setClosing(true);
+        setTimeout(() => onClose(), 400);
+    };
+    return (
+        <div className="fixed inset-0 z-50 pointer-events-auto">
+            <div className="absolute inset-0 bg-black/50" onClick={requestClose}></div>
+            <div className={`absolute right-0 top-0 h-full w-1/2 max-w-[420px] min-w-[280px] bg-black/90 backdrop-blur-md border-l border-white/10 shadow-2xl ${closing ? 'animate-slide-out-right' : 'animate-slide-in-from-right'}`}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                    <h3 className="font-semibold">{title}</h3>
+                    <button onClick={requestClose} className="text-xl"><i className="fa-solid fa-xmark"></i></button>
+                </div>
+                <div className="p-4 overflow-y-auto h-[calc(100%-52px)]">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default VideoPlayer;

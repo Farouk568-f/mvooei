@@ -1,5 +1,3 @@
-
-
 import { TMDB_API_KEY, TMDB_BASE_URL, SCRAPER_API_URL, AVAILABLE_PROVIDERS } from '../contexts/constants';
 import { Movie, SubtitleTrack, StreamLink, StreamData } from '../types';
 
@@ -434,4 +432,4 @@ export const getDownloadedVideoURL = async (id: string): Promise<string | null> 
     db.close();
     if (!blob) return null;
     return URL.createObjectURL(blob);
-};
+};  

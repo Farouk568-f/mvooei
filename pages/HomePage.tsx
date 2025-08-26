@@ -8,7 +8,14 @@ import Layout from '../components/Layout';
 import { IMAGE_BASE_URL, POSTER_SIZE, BACKDROP_SIZE, BACKDROP_SIZE_MEDIUM } from '../contexts/constants';
 import { CHANNELS } from '../services/aiScheduleService';
 
-const MovieCard: React.FC<{ movie: Movie }> = ({ movie }) => {
+const getRankColor = (rank: number) => {
+  if (rank === 1) return 'bg-gradient-to-b from-amber-400 to-yellow-500';
+  if (rank === 2) return 'bg-gradient-to-b from-slate-300 to-slate-400';
+  if (rank === 3) return 'bg-gradient-to-b from-orange-400 to-amber-600';
+  return 'bg-gradient-to-b from-indigo-500 to-purple-600';
+};
+
+const MovieCard: React.FC<{ movie: Movie; rank?: number }> = ({ movie, rank }) => {
   const navigate = useNavigate();
   const type = movie.media_type || (movie.title ? 'movie' : 'tv');
   
@@ -25,15 +32,21 @@ const MovieCard: React.FC<{ movie: Movie }> = ({ movie }) => {
     >
       <div className="flex flex-col overflow-hidden transition-all duration-300 ease-in-out transform rounded-md shadow-lg bg-[var(--surface)] interactive-card">
         <div className="relative">
+           {rank && (
+            <div className={`absolute top-0 left-2 z-10 w-8 h-10 text-white flex items-center justify-center font-extrabold text-sm pt-1 shadow-lg ${getRankColor(rank)}`}
+                 style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 85%, 0 100%)' }}>
+              {rank}
+            </div>
+          )}
           <img
             src={`${IMAGE_BASE_URL}${POSTER_SIZE}${movie.poster_path}`}
             srcSet={`${IMAGE_BASE_URL}w342${movie.poster_path} 342w, ${IMAGE_BASE_URL}${POSTER_SIZE}${movie.poster_path} 500w`}
             sizes="(max-width: 767px) 144px, 176px"
             alt={movie.title || movie.name}
-            className="object-cover w-full h-52 md:h-60 filter brightness-105"
+            className="object-cover w-full h-52 md:h-60 filter brightness-105 saturate-105"
             loading="lazy"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
           <div className="absolute bottom-0 left-0 right-0 p-2">
               <p className="text-xs text-gray-300">{movie.release_date?.substring(0,4) || movie.first_air_date?.substring(0,4)}</p>
           </div>
@@ -103,10 +116,10 @@ const LandscapeMovieCard: React.FC<{ movie: Movie }> = ({ movie }) => {
           srcSet={`${IMAGE_BASE_URL}w300${movie.backdrop_path} 300w, ${IMAGE_BASE_URL}${BACKDROP_SIZE_MEDIUM}${movie.backdrop_path} 780w`}
           sizes="(max-width: 639px) 65vw, (max-width: 767px) 256px, 288px"
           alt={movie.title || movie.name}
-          className="object-cover w-full aspect-video filter brightness-105"
+          className="object-cover w-full aspect-video filter brightness-105 saturate-105"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
         <div className="absolute inset-x-0 bottom-0 p-3">
              <h3 className="text-base font-bold text-white truncate">{movie.title || movie.name}</h3>
              <p className="text-xs text-gray-400">{movie.release_date?.substring(0,4) || movie.first_air_date?.substring(0,4)}</p>
@@ -135,10 +148,10 @@ const SpotlightCard: React.FC<{ movie: Movie }> = ({ movie }) => {
                     srcSet={`${IMAGE_BASE_URL}w300${movie.backdrop_path} 300w, ${IMAGE_BASE_URL}${BACKDROP_SIZE_MEDIUM}${movie.backdrop_path} 780w`}
                     sizes="(max-width: 639px) 85vw, 384px"
                     alt={movie.title || movie.name}
-                    className="absolute inset-0 object-cover w-full h-full filter brightness-105"
+                    className="absolute inset-0 object-cover w-full h-full filter brightness-105 saturate-105"
                     loading="lazy"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
                 <div className="relative z-10 p-4 space-y-2">
                     <h3 className="text-xl font-extrabold text-white truncate drop-shadow-md">{movie.title || movie.name}</h3>
                     <div className="flex items-center gap-x-3 text-sm text-gray-200">
@@ -163,8 +176,8 @@ const HistoryCard: React.FC<{ item: HistoryItem }> = ({ item }) => {
 
   return (
     <div onClick={handleClick} className="relative flex-shrink-0 w-64 overflow-hidden rounded-xl cursor-pointer bg-[var(--surface)] transition-transform duration-300 shadow-lg interactive-card">
-      <img src={item.itemImage} alt={item.title} className="object-cover w-full h-36 filter brightness-105" loading="lazy" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
+      <img src={item.itemImage} alt={item.title} className="object-cover w-full h-36 filter brightness-105 saturate-105" loading="lazy" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
       <div className="absolute bottom-0 left-0 right-0 p-3">
         <h3 className="text-sm font-bold text-white truncate">{item.title}</h3>
         <div className="w-full h-1.5 mt-2 bg-gray-700 rounded-full overflow-hidden">
@@ -175,7 +188,7 @@ const HistoryCard: React.FC<{ item: HistoryItem }> = ({ item }) => {
   );
 };
 
-const Carousel: React.FC<{ title: string; movies: Movie[]; category?: string }> = ({ title, movies, category }) => {
+const Carousel: React.FC<{ title: string; movies: Movie[]; category?: string; showRankings?: boolean; }> = ({ title, movies, category, showRankings }) => {
     const navigate = useNavigate();
     const { t } = useTranslation();
     if (!movies || movies.length === 0) return null;
@@ -187,7 +200,7 @@ const Carousel: React.FC<{ title: string; movies: Movie[]; category?: string }> 
             </div>
             <div className="overflow-x-auto no-scrollbar px-4">
                 <div className="flex flex-nowrap gap-x-2 pb-4">
-                    {movies.map(movie => <MovieCard key={`${category || 'carousel'}-${movie.id}`} movie={movie} />)}
+                    {movies.map((movie, index) => <MovieCard key={`${category || 'carousel'}-${movie.id}`} movie={movie} rank={showRankings ? index + 1 : undefined} />)}
                 </div>
             </div>
         </div>
@@ -250,6 +263,7 @@ const PosterSlider: React.FC<{ items: Movie[] }> = ({ items }) => {
   const { t, language } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [logosById, setLogosById] = useState<Record<number, string[]>>({});
 
   const itemsToShow = items.filter(item => item.backdrop_path && item.poster_path).slice(0, 10);
 
@@ -297,6 +311,26 @@ const PosterSlider: React.FC<{ items: Movie[] }> = ({ items }) => {
     navigate(`/details/${itemType}/${item.id}`);
   };
 
+  // Fetch and cache production company/network logos for the active slide
+  useEffect(() => {
+    const fetchLogos = async () => {
+      try {
+        if (!activeItem?.id || logosById[activeItem.id]) return;
+        const endpoint = type === 'tv' ? `/tv/${activeItem.id}` : `/movie/${activeItem.id}`;
+        const details: any = await fetchFromTMDB(endpoint);
+        const entities = type === 'tv' ? (details?.networks || []) : (details?.production_companies || []);
+        const paths: string[] = entities
+          .filter((e: any) => e && e.logo_path)
+          .map((e: any) => `${IMAGE_BASE_URL}w185${e.logo_path}`);
+        setLogosById(prev => ({ ...prev, [activeItem.id]: paths.slice(0, 1) }));
+      } catch (e) {
+        // Silent fail; logos are optional
+      }
+    };
+    fetchLogos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItem?.id, type]);
+
   return (
     <div className="relative w-full h-[60vh] md:h-[90vh] max-h-[800px] mb-8 overflow-hidden bg-[var(--background)]">
       {itemsToShow.map((item, index) => (
@@ -316,6 +350,13 @@ const PosterSlider: React.FC<{ items: Movie[] }> = ({ items }) => {
       <div className="relative z-10 flex items-end justify-between h-full p-4 md:p-8">
         
         <div key={activeItem.id} className="w-full md:w-2/3 animate-hero-content-in pe-28 sm:pe-32 md:pe-0">
+          {logosById[activeItem.id] && logosById[activeItem.id].length > 0 && (
+            <div className="mb-2 flex items-center gap-3 opacity-95">
+              {logosById[activeItem.id].slice(0, 2).map((url) => (
+                <img key={url} src={url} alt="studio" className="h-6 md:h-7 object-contain drop-shadow" loading="lazy" />
+              ))}
+            </div>
+          )}
           <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold text-white drop-shadow-lg" style={{textShadow: '2px 2px 8px rgba(0,0,0,0.7)'}}>
             {activeItem.title || activeItem.name}
           </h2>
@@ -416,8 +457,8 @@ const ShortsCard: React.FC<{ short: Short; onClick: () => void; }> = ({ short, o
         return null;
     return (
         <div onClick={onClick} className="flex-shrink-0 w-28 h-48 md:w-32 md:h-52 cursor-pointer relative overflow-hidden rounded-xl shadow-lg bg-[var(--surface)] interactive-card-sm">
-            <img src={`${IMAGE_BASE_URL}${POSTER_SIZE}${short.poster_path}`} alt={short.title || short.name} className="object-cover w-full h-full filter brightness-105" loading="lazy" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+            <img src={`${IMAGE_BASE_URL}${POSTER_SIZE}${short.poster_path}`} alt={short.title || short.name} className="object-cover w-full h-full filter brightness-105 saturate-105" loading="lazy" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
             <div className="absolute bottom-0 left-0 right-0 p-2">
                 <h3 className="text-xs font-bold text-white truncate">{short.title || short.name}</h3>
             </div>
@@ -545,10 +586,10 @@ const TrailerCard: React.FC<{ trailer: Trailer }> = ({ trailer }) => {
         <img
           src={trailer.youtubeThumbnailUrl}
           alt={trailer.title}
-          className="object-cover w-full aspect-video filter brightness-105"
+          className="object-cover w-full aspect-video filter brightness-105 saturate-105"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
         <div className="absolute inset-0 flex items-center justify-center transition-all duration-300 opacity-80 group-hover:opacity-100 group-hover:scale-110">
           <i className="fa-brands fa-youtube text-red-600 text-6xl" style={{ textShadow: '0 0 10px rgba(0,0,0,0.5)' }}></i>
         </div>
@@ -663,7 +704,7 @@ const HomePage: React.FC = () => {
           featuredPromise = popularMoviesPromise;
           upcomingPromise = fetchFromTMDB('/discover/movie', { ...kidsParams, with_genres: '16,10751', sort_by: 'primary_release_date.desc' });
           nowPlayingPromise = popularMoviesPromise;
-          trendingWeekPromise = popularMoviesPromise;
+          trendingWeekPromise = fetchFromTMDB('/discover/movie', { ...kidsParams, with_companies: '2|3' }); // Popular from Disney/Pixar
           popularActorsPromise = Promise.resolve({ results: [] });
           movieShortsPromise = fetchFromTMDB('/discover/movie', { ...kidsParams, with_genres: '16,10751' });
           tvShortsPromise = Promise.resolve({ results: [] });
@@ -696,8 +737,11 @@ const HomePage: React.FC = () => {
           netflixPromise
         ]);
         
+        const trendingIds = new Set((trendingWeekRes.results || []).map((m: Movie) => m.id));
+        const uniquePopular = (popularRes.results || []).filter((m: Movie) => !trendingIds.has(m.id));
+        
         setData({
-          popular: popularRes.results || [],
+          popular: uniquePopular,
           topRated: topRatedRes.results || [],
           series: seriesRes.results || [],
           featured: featuredRes.results || [],
@@ -738,7 +782,7 @@ const HomePage: React.FC = () => {
             {shortsData.movieShorts.length > 0 && <ShortsCarousel title={t('movieShorts')} shorts={shortsData.movieShorts} />}
             {!isKidsMode && followedMovies.length > 0 && <Carousel title={t('fromActorsYouFollow')} movies={followedMovies} />}
             {recommendations.length > 0 && <Carousel title={t('pickedForYou')} movies={recommendations} />}
-            {!isKidsMode && data.trendingWeek.length > 0 && <Carousel title={t('trendingThisWeek')} movies={data.trendingWeek} category="trending_week" />}
+            {!isKidsMode && data.trendingWeek.length > 0 && <Carousel title={t('trendingThisWeek')} movies={data.trendingWeek} category="trending_week" showRankings />}
             <Carousel title={t(isKidsMode ? 'popularKidsMovies' : 'popularMovies')} movies={data.popular} category="popular" />
             {!isKidsMode && <HistoryCarousel history={history} />}
             <LandscapeCarousel title={t('upcoming')} movies={data.upcoming} category="upcoming" />

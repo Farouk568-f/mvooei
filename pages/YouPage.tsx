@@ -33,7 +33,7 @@ const ActionButton: React.FC<{ icon: string; text: string; onClick: () => void; 
     return (
         <button onClick={onClick} className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-zinc-800 rounded-full hover:bg-zinc-700 transition-colors btn-press">
             <i className={`${icon} text-white`}></i>
-            <span className="text-sm font-semibold text-white">{text}</span>
+            <span className="text-sm font-semibold text-white truncate">{text}</span>
         </button>
     );
 };
@@ -85,8 +85,8 @@ const ResumeCard: React.FC<{ item: HistoryItem }> = ({ item }) => {
 
     return (
         <div onClick={handleDetails} className="relative w-full overflow-hidden cursor-pointer group rounded-2xl bg-zinc-800 shadow-xl interactive-card aspect-video">
-            <img src={item.itemImage} alt={item.title} className="w-full h-full object-cover filter brightness-105" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent"></div>
+            <img src={item.itemImage} alt={item.title} className="w-full h-full object-cover filter brightness-105 saturate-105" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
             <div className="absolute inset-0 p-4 flex flex-col justify-end">
                 <p className="text-sm font-bold text-red-400 drop-shadow">{t('continueWatching')}</p>
                 <h3 className="text-xl font-bold text-white drop-shadow-lg mt-1">{item.title}</h3>
@@ -119,7 +119,7 @@ const HistoryCard: React.FC<{ item: HistoryItem, index: number }> = ({ item, ind
     return (
         <div onClick={handleClick} className="flex-shrink-0 w-64 cursor-pointer group interactive-card">
             <div className="relative overflow-hidden rounded-2xl bg-zinc-800 shadow-lg">
-                <img src={item.itemImage} alt={item.title} className="w-full aspect-video object-cover filter brightness-105" loading="lazy" />
+                <img src={item.itemImage} alt={item.title} className="w-full aspect-video object-cover filter brightness-105 saturate-105" loading="lazy" />
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-600/50">
                     <div className="h-full bg-red-600" style={{ width: `${progress}%` }}></div>
                 </div>
@@ -149,8 +149,8 @@ const PlaylistCard: React.FC<{ title: string; subtitle: string; icon: string; co
             <div className="relative overflow-hidden rounded-2xl bg-zinc-800 shadow-lg aspect-video">
                 {coverImage ? (
                     <>
-                        <img src={coverImage} alt={title} className="w-full h-full object-cover filter brightness-105" loading="lazy" />
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-end p-3">
+                        <img src={coverImage} alt={title} className="w-full h-full object-cover filter brightness-105 saturate-105" loading="lazy" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-end p-3">
                             <div className="flex flex-col items-center text-white">
                                 <i className={`${icon} text-2xl`}></i>
                                 <span className="text-xs font-bold mt-1">{countText}</span>

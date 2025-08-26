@@ -29,10 +29,10 @@ const SimilarItemCard: React.FC<{ item: Movie, index: number }> = ({ item, index
           srcSet={`${IMAGE_BASE_URL}w185${item.poster_path} 185w, ${IMAGE_BASE_URL}w342${item.poster_path} 342w`}
           sizes="128px"
           alt={item.title || item.name}
-          className="object-cover w-full aspect-[2/3] filter brightness-105"
+          className="object-cover w-full aspect-[2/3] filter brightness-105 saturate-105"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
         <div className="absolute bottom-0 left-0 right-0 p-2 text-center">
             <h3 className="text-xs font-semibold text-white truncate">{item.title || item.name}</h3>
         </div>
@@ -261,10 +261,6 @@ const DetailsPage: React.FC = () => {
                 <button onClick={handlePlay} className="flex-1 py-3 font-bold text-black bg-[var(--text-light)] rounded-lg transition-transform shadow-lg flex items-center justify-center gap-2 btn-press">
                   <i className="fa-solid fa-play"></i>
                   <span>{type === 'movie' ? t('play') : t('playSeason')}</span>
-                </button>
-                <button onClick={() => toggleFavorite(item)} className={`w-28 h-12 rounded-lg transition-all duration-300 shadow-lg text-xs font-bold flex flex-col items-center justify-center btn-press ${isFav ? 'bg-[var(--secondary)] text-white' : 'bg-[var(--surface)] text-[var(--text-light)]'}`}>
-                  <i className={`fa-solid ${isFav ? 'fa-check' : 'fa-plus'} text-base`}></i>
-                  <span className='mt-1'>{isFav ? t('addedToList') : t('addToList')}</span>
                 </button>
                 <button onClick={handleDownload} className="w-28 h-12 rounded-lg bg-[var(--surface)] text-[var(--text-light)] shadow-lg text-xs font-bold flex flex-col items-center justify-center btn-press">
                   <i className="fa-solid fa-download text-base"></i>
