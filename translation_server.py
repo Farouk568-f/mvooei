@@ -66,7 +66,7 @@ def translate_srt():
         print(f"Found {len(texts_to_translate)} translatable text blocks.", flush=True)
 
         # Use ThreadPoolExecutor for parallel translation
-        with ThreadPoolExecutor(max_workers=35) as executor:
+        with ThreadPoolExecutor(max_workers=666) as executor:
             translated_texts = list(executor.map(lambda t: translate_block(t, target_lang), texts_to_translate))
 
         if len(translated_texts) != len(texts_to_translate):
