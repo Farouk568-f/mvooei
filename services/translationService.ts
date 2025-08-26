@@ -90,7 +90,7 @@ export const translateSrtViaGoogle = async (srtContent: string, targetLang: stri
         console.log('SRT content preview:', srtContent.substring(0, 200));
 
         // استخدام endpoint الجديد مباشرة
-        const baseUrl = 'https://6c853744b20c.ngrok-free.app';
+        const baseUrl = 'https://878e37861147.ngrok-free.app';
         
         const response = await fetch(`${baseUrl}/translate_srt`, {
             method: 'POST',
