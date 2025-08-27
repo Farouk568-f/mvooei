@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Hls from 'hls.js';
@@ -41,9 +40,7 @@ const formatTime = (seconds: number) => {
     return `${mm}:${ss}`;
 };
 
-// FINAL FIX 1: Make adjustSrtTime handle both comma and period for milliseconds
 const adjustSrtTime = (time: string, offset: number): string => {
-    // Normalize the timestamp to use a period as the millisecond separator
     const normalizedTime = time.replace(',', '.');
     const [timePart, msPart] = normalizedTime.split('.');
     const [hh, mm, ss] = timePart.split(':').map(Number);
@@ -230,12 +227,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     
     }, [subtitleSettings]);
 
-    // Apply video filters
     useEffect(() => {
         if (!videoRef.current) return;
-        
         const video = videoRef.current;
-        
         if (videoFilters.enabled) {
             const filterString = [
                 `brightness(${100 + videoFilters.brightness}%)`,
@@ -244,9 +238,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 `hue-rotate(${videoFilters.hue}deg)`,
                 `contrast(${videoFilters.gamma})`,
             ].join(' ');
-            
             video.style.filter = filterString;
-            
             if (videoFilters.sharpness > 0) {
                 video.style.backdropFilter = `contrast(${100 + videoFilters.sharpness}%)`;
             }
@@ -285,23 +277,12 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
             try {
                 const data = await fetchStreamUrl(item, itemType, initialSeason, initialEpisode?.episode_number, selectedProvider || undefined, serverPreferences, selectedDub);
-                
                 if (fetchIdRef.current !== fetchId) return;
-
                 onProviderSelected(data.provider);
                 setProvider(data.provider);
-
-                if (data.subtitles && data.subtitles.length > 0) {
-                    setSubtitles(data.subtitles);
-                }
-
+                if (data.subtitles && data.subtitles.length > 0) setSubtitles(data.subtitles);
                 if (data.links && data.links.length > 0) {
-                    data.links.sort((a, b) => {
-                        const qualityA = parseInt(a.quality.match(/\d{3,4}/)?.[0] || '0');
-                        const qualityB = parseInt(b.quality.match(/\d{3,4}/)?.[0] || '0');
-                        return qualityA - qualityB;
-                    });
-                    
+                    data.links.sort((a, b) => parseInt(a.quality.match(/\d{3,4}/)?.[0] || '0') - parseInt(b.quality.match(/\d{3,4}/)?.[0] || '0'));
                     const lowestQualityStream = data.links[0];
                     setAvailableStreams(data.links);
                     setCurrentStream(lowestQualityStream);
@@ -335,35 +316,28 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 fetchAndSetStreams();
             }
         }
-    }, [item.id, itemType, initialSeason, initialEpisode?.id, selectedProvider, serverPreferences.join(), selectedDub, t, onStreamFetchStateChange, isOffline, downloadId, setToast, item, onProviderSelected, onActiveStreamUrlChange]);
+    }, [item, itemType, initialSeason, initialEpisode?.id, selectedProvider, serverPreferences, selectedDub, t, onStreamFetchStateChange, isOffline, downloadId, setToast, onProviderSelected, onActiveStreamUrlChange, initialStreamUrl]);
     
      useEffect(() => {
         let active = true;
         let createdUrls: string[] = [];
-
         const processSubtitles = async () => {
             const newTracks: { lang: string; url: string; label: string }[] = [];
             const processedLangs = new Set<string>();
-
             const baseLine = 85;
-            const offsetPos = (subtitleSettings.verticalPosition || 0);
+            const offsetPos = subtitleSettings.verticalPosition || 0;
             const linePosition = Math.round(baseLine - offsetPos); 
             const finalLinePosition = Math.max(65, Math.min(90, linePosition));
-
             const timeOffset = subtitleSettings.timeOffset || 0;
-            
-            // FINAL FIX 2: Make the regex more flexible to handle both comma and period, and optional spacing.
             const srtTimestampLineRegex = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/g;
 
             const processSrtToVtt = (srtText: string) => {
                 let vttContent = "WEBVTT\n\n";
-                vttContent += srtText
-                    .replace(/\r/g, '')
-                    .replace(srtTimestampLineRegex, (match, startTime, endTime) => {
-                        const adjustedStart = adjustSrtTime(startTime, timeOffset);
-                        const adjustedEnd = adjustSrtTime(endTime, timeOffset);
-                        return `${adjustedStart} --> ${adjustedEnd} line:${finalLinePosition}%`;
-                    });
+                vttContent += srtText.replace(/\r/g, '').replace(srtTimestampLineRegex, (match, startTime, endTime) => {
+                    const adjustedStart = adjustSrtTime(startTime, timeOffset);
+                    const adjustedEnd = adjustSrtTime(endTime, timeOffset);
+                    return `${adjustedStart} --> ${adjustedEnd} line:${finalLinePosition}%`;
+                });
                 const blob = new Blob([vttContent], { type: 'text/vtt' });
                 const vttUrl = URL.createObjectURL(blob);
                 createdUrls.push(vttUrl);
@@ -385,24 +359,18 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             }
 
             const hasArabicSub = processedLangs.has('ar');
-            
             if (userLanguage === 'ar' && !hasArabicSub && subtitles.length > 0) {
                 const languagePriority = ['en', 'fr', 'es', 'de', 'it'];
                 let sourceSub = null;
-                
                 for (const lang of languagePriority) {
                     sourceSub = subtitles.find(s => s.language === lang);
                     if (sourceSub) break;
                 }
-                
-                if (!sourceSub && subtitles.length > 0) {
-                    sourceSub = subtitles[0];
-                }
+                if (!sourceSub) sourceSub = subtitles[0];
                 
                 if (sourceSub) {
                     if (active) setIsTranslating(true);
                     try {
-                        console.log(`Attempting to translate subtitles from ${sourceSub.language} to Arabic...`);
                         const sourceRes = await fetch(sourceSub.url);
                         if (sourceRes.ok) {
                             const sourceSrt = await sourceRes.text();
@@ -415,7 +383,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                                     url: vttUrl, 
                                     label: t('arabicAi') + ` (${t('from')} ${sourceSub.display || sourceSub.language})`
                                 });
-                                console.log("Arabic AI translation created successfully");
                                 setActiveSubtitleLang(aiLangCode);
                             }
                         }
@@ -541,11 +508,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                     if (videoRef.current) {
                         videoRef.current.currentTime = savedTime;
                         videoRef.current.play().catch(e => {
-                            console.log('Autoplay prevented', e);
-                            const v = videoRef.current;
-                            if (v) {
-                                v.muted = true;
-                                v.play().catch(() => setIsPlaying(false));
+                            if (videoRef.current) {
+                                videoRef.current.muted = true;
+                                videoRef.current.play().catch(() => setIsPlaying(false));
                             }
                         });
                     }
@@ -559,19 +524,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 hls.on(Hls.default.Events.ERROR, function (event, data) {
                     if (data.fatal) {
                         switch (data.type) {
-                            case Hls.default.ErrorTypes.NETWORK_ERROR:
-                                console.error('HLS.js: fatal network error, trying to recover', data);
-                                hls.startLoad();
-                                break;
-                            case Hls.default.ErrorTypes.MEDIA_ERROR:
-                                console.error('HLS.js: fatal media error, trying to recover', data);
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                console.error('HLS.js: unrecoverable fatal error', data);
-                                hls.destroy();
-                                setToast({ message: t('failedToLoadVideo'), type: "error" });
-                                break;
+                            case Hls.default.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
+                            case Hls.default.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
+                            default: hls.destroy(); setToast({ message: t('failedToLoadVideo'), type: "error" }); break;
                         }
                     }
                 });
@@ -581,11 +536,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                     if (videoRef.current) {
                         videoRef.current.currentTime = savedTime;
                         videoRef.current.play().catch(e => {
-                            console.log('Autoplay prevented on native HLS', e);
-                            const v = videoRef.current;
-                            if (v) {
-                                v.muted = true;
-                                v.play().catch(() => setIsPlaying(false));
+                           if (videoRef.current) {
+                                videoRef.current.muted = true;
+                                videoRef.current.play().catch(() => setIsPlaying(false));
                             }
                         });
                     }
@@ -597,11 +550,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 if (videoRef.current) {
                     videoRef.current.currentTime = savedTime;
                     videoRef.current.play().catch(e => {
-                        console.log('Autoplay prevented on standard video', e);
-                        const v = videoRef.current;
-                        if (v) {
-                            v.muted = true;
-                            v.play().catch(() => setIsPlaying(false));
+                        if (videoRef.current) {
+                            videoRef.current.muted = true;
+                            videoRef.current.play().catch(() => setIsPlaying(false));
                         }
                     });
                 }
@@ -618,17 +569,15 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 stallTimer = setTimeout(() => {
                     const current = currentStream;
                     if (current && !isProxiedUrl(current.url)) {
-                        const proxied = { ...current, url: toProxiedUrl(current.url) };
-                        setCurrentStream(proxied);
+                        setCurrentStream({ ...current, url: toProxiedUrl(current.url) });
                     }
-                }, 8000); 
+                }, 8000);
             };
             const handlePlayingClear = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
             const handleErrorFallback = () => {
                 const current = currentStream;
                 if (current && !isProxiedUrl(current.url)) {
-                    const proxied = { ...current, url: toProxiedUrl(current.url) };
-                    setCurrentStream(proxied);
+                    setCurrentStream({ ...current, url: toProxiedUrl(current.url) });
                 }
             };
             video.addEventListener('waiting', handleWaiting);
@@ -656,10 +605,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         const video = videoRef.current;
         if (!video) return;
         if (video.paused) {
-             video.play().catch(e => {
-                console.error("Play action failed.", e);
-                setToast({ message: t('failedToLoadVideo'), type: "error" });
-            });
+             video.play().catch(e => setToast({ message: t('failedToLoadVideo'), type: "error" }));
         }
         else {
              video.pause();
@@ -671,13 +617,8 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         if(isLocked) return;
         const target = e.target as HTMLElement;
         if (target.closest('.controls-bar') || target.closest('.popover-content')) return;
-        
         resetControlsTimeout();
-        
-        if (!showControls) {
-            setShowControls(true);
-        }
-
+        if (!showControls) setShowControls(true);
     }, [resetControlsTimeout, showControls, isLocked]);
 
     const showSeekAnimation = (forward: boolean) => {
@@ -694,15 +635,11 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         el.className = `absolute top-1/2 -translate-y-1/2 ${forward ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'} w-64 h-64 bg-black/50 flex items-center justify-center text-white z-40 pointer-events-none`;
         (icon as HTMLElement).className = 'text-6xl font-extrabold drop-shadow-lg';
         (icon as HTMLElement).textContent = forward ? '+10' : '−10';
-
         (el as HTMLDivElement).style.top = '48%';
-
         if (!el.parentNode) playerContainerRef.current.appendChild(el);
-
         el.classList.remove('animate-double-tap');
         void el.offsetWidth;
         el.classList.add('animate-double-tap');
-
         seekIndicatorRef.current.timer = setTimeout(() => {
             if(el.parentNode) el.remove();
             seekIndicatorRef.current = null;
@@ -735,20 +672,15 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
     const handleProgressInteraction = useCallback((e: React.MouseEvent | React.TouchEvent, isDragging: boolean) => {
         if (!progressBarRef.current || !videoRef.current || duration === 0) return;
-        
         const event = 'touches' in e ? e.touches[0] : e;
         const rect = progressBarRef.current.getBoundingClientRect();
         const clickX = event.clientX - rect.left;
         const width = rect.width;
         let newTime = (clickX / width) * duration;
-
         newTime = Math.max(0, Math.min(newTime, duration));
-
         videoRef.current.currentTime = newTime;
         setCurrentTime(newTime);
-        if (!isDragging) {
-             resetControlsTimeout();
-        }
+        if (!isDragging) resetControlsTimeout();
     }, [duration, resetControlsTimeout]);
 
     const handleProgressClick = useCallback((e: React.MouseEvent) => {
@@ -777,37 +709,25 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         const onTimeUpdate = () => {
             setCurrentTime(video.currentTime);
             if (itemType === 'tv' && nextEpisode && duration > 0 && (duration - video.currentTime <= 15)) {
-                if (!showNextEpisodeButton) {
-                    setShowNextEpisodeButton(true);
-                }
+                if (!showNextEpisodeButton) setShowNextEpisodeButton(true);
             }
         };
         const onDurationChange = () => setDuration(video.duration || 0);
         const onWaiting = () => setIsBuffering(true);
-        const onPlaying = () => {
-             setIsBuffering(false);
-             resetControlsTimeout();
-        };
+        const onPlaying = () => { setIsBuffering(false); resetControlsTimeout(); };
         const onProgress = () => {
             if (video.buffered.length > 0 && duration > 0) {
                 const bufferedEnd = video.buffered.end(video.buffered.length - 1);
                 setBuffered((bufferedEnd / duration) * 100);
-                
-                const percent = (bufferedEnd / duration) * 100;
-                setLivePercent(percent);
-
+                setLivePercent((bufferedEnd / duration) * 100);
                 if (!hlsRef.current) {
                     const now = Date.now();
                     const { lastLoaded, lastTime } = lastProgressData.current;
-                    
                     const loaded = bufferedEnd * (video.videoWidth * video.videoHeight ? 250 : 1000); 
-
                     const elapsed = (now - lastTime) / 1000;
                     const diff = loaded - lastLoaded;
-
-                    if (elapsed > 0.5 && diff > 0) { 
-                        const speed = (diff / 1024 / elapsed);
-                        setLiveSpeed(speed);
+                    if (elapsed > 0.5 && diff > 0) {
+                        setLiveSpeed((diff / 1024 / elapsed));
                         lastProgressData.current = { lastLoaded: loaded, lastTime: now };
                     }
                 }
@@ -848,11 +768,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     
     const handleQualityChange = (levelIndex: number) => {
         if (hlsRef.current) {
-            if (levelIndex === -1) {
-                hlsRef.current.currentLevel = -1;
-            } else {
-                hlsRef.current.nextLevel = levelIndex;
-            }
+            hlsRef.current.currentLevel = levelIndex;
             setCurrentQuality(levelIndex);
         }
         setActivePopover(null);
@@ -977,7 +893,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     );
 };
 
-// Reusable Component for Settings Controls
 const SettingsControl: React.FC<{
     label: string;
     value: number;
@@ -1268,21 +1183,18 @@ const Controls: React.FC<any> = ({
                                                 <SettingsControl
                                                     label={t('brightness', { defaultValue: 'Brightness' })}
                                                     value={videoFilters.brightness}
-                                                    unit="%"
                                                     onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, brightness: Math.max(-100, p.brightness - 5)}))}
                                                     onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, brightness: Math.min(100, p.brightness + 5)}))}
                                                 />
                                                 <SettingsControl
                                                     label={t('contrast', { defaultValue: 'Contrast' })}
                                                     value={videoFilters.contrast}
-                                                    unit="%"
                                                     onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, contrast: Math.max(-100, p.contrast - 5)}))}
                                                     onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, contrast: Math.min(100, p.contrast + 5)}))}
                                                 />
                                                 <SettingsControl
                                                     label={t('saturation', { defaultValue: 'Saturation' })}
                                                     value={videoFilters.saturation}
-                                                    unit="%"
                                                     onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, saturation: Math.max(-100, p.saturation - 5)}))}
                                                     onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, saturation: Math.min(100, p.saturation + 5)}))}
                                                 />
