@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Hls from 'hls.js';
-import { Movie, Episode, SubtitleTrack, SubtitleSettings, StreamLink, VideoFilters } from '../types'; // Make sure VideoFilters is defined in your types file
+import { Movie, Episode, SubtitleTrack, SubtitleSettings, StreamLink, VideoFilters } from '../types';
 import { useProfile } from '../contexts/ProfileContext';
 import { useTranslation } from '../contexts/LanguageContext';
 import { fetchStreamUrl } from '../services/apiService';
@@ -40,14 +41,14 @@ const formatTime = (seconds: number) => {
     return `${mm}:${ss}`;
 };
 
-// START OF FIX 1: Make adjustSrtTime handle both comma and period for milliseconds
+// FINAL FIX 1: Make adjustSrtTime handle both comma and period for milliseconds
 const adjustSrtTime = (time: string, offset: number): string => {
     // Normalize the timestamp to use a period as the millisecond separator
     const normalizedTime = time.replace(',', '.');
     const [timePart, msPart] = normalizedTime.split('.');
     const [hh, mm, ss] = timePart.split(':').map(Number);
     
-    let totalMs = (hh * 3600 + mm * 60 + ss) * 1000 + Number(msPart);
+    let totalMs = (hh * 3600 + mm * 60 + ss) * 1000 + Number(msPart || 0);
     totalMs += offset * 1000;
     
     if (totalMs < 0) totalMs = 0;
@@ -61,7 +62,6 @@ const adjustSrtTime = (time: string, offset: number): string => {
     
     return `${String(newHh).padStart(2, '0')}:${String(newMm).padStart(2, '0')}:${String(newSs).padStart(2, '0')}.${String(newMs).padStart(3, '0')}`;
 };
-// END OF FIX 1
 
 const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, initialEpisode, initialTime, initialStreamUrl, onEpisodesButtonClick, onEnterPip, selectedProvider, onProviderSelected, onStreamFetchStateChange, setVideoNode, serverPreferences, onActiveStreamUrlChange, episodes, onEpisodeSelect, isOffline, downloadId }) => {
     const navigate = useNavigate();
@@ -116,7 +116,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     const [playbackRate, setPlaybackRate] = useState(1);
     const [activePopover, setActivePopover] = useState<'quality' | 'speed' | 'language' | null>(null);
 
-    // Live loading metrics
     const [livePercent, setLivePercent] = useState(0);
     const [liveSpeed, setLiveSpeed] = useState(0); // in KB/s
     const lastProgressData = useRef({ lastLoaded: 0, lastTime: Date.now() });
@@ -144,7 +143,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     const isPopoverOpenRef = useRef(isPopoverOpen);
     isPopoverOpenRef.current = isPopoverOpen;
 
-    // Proxy helpers to mitigate mid-playback stalls for direct MP4 links
     const PROXY_PREFIX = (typeof window !== 'undefined' && location?.hostname === 'localhost') ? '' : 'https://prox-q3zt.onrender.com';
     const isProxiedUrl = useCallback((url: string) => {
         try {
@@ -190,8 +188,9 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     }, [nextEpisode, onEpisodeSelect]);
 
     const resetVideoFilters = useCallback(() => {
-        updateVideoFilters(() => ({...defaultVideoFilters, enabled: videoFilters.enabled }));
-    }, [setScreenSpecificData, defaultVideoFilters, videoFilters.enabled]);
+        setVideoFilters(defaultVideoFilters);
+        setScreenSpecificData('videoFilters', defaultVideoFilters);
+    }, [setScreenSpecificData, defaultVideoFilters]);
 
     const updateVideoFilters = useCallback((updater: (prev: VideoFilters) => VideoFilters) => {
         setVideoFilters(prev => {
@@ -233,21 +232,27 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
     // Apply video filters
     useEffect(() => {
+        if (!videoRef.current) return;
+        
         const video = videoRef.current;
-        if (!video) return;
-
+        
         if (videoFilters.enabled) {
             const filterString = [
-                `brightness(${1 + videoFilters.brightness / 100})`,
-                `contrast(${1 + videoFilters.contrast / 100})`,
-                `saturate(${1 + videoFilters.saturation / 100})`,
+                `brightness(${100 + videoFilters.brightness}%)`,
+                `contrast(${100 + videoFilters.contrast}%)`,
+                `saturate(${100 + videoFilters.saturation}%)`,
                 `hue-rotate(${videoFilters.hue}deg)`,
+                `contrast(${videoFilters.gamma})`,
             ].join(' ');
+            
             video.style.filter = filterString;
-            // Note: Sharpness and Gamma are harder to polyfill with CSS and are omitted for simplicity from this direct CSS mapping.
-            // The logic can be extended here if a library like gl-react is used for advanced filtering.
+            
+            if (videoFilters.sharpness > 0) {
+                video.style.backdropFilter = `contrast(${100 + videoFilters.sharpness}%)`;
+            }
         } else {
-            video.style.filter = 'none';
+            video.style.filter = '';
+            video.style.backdropFilter = '';
         }
     }, [videoFilters]);
 
@@ -259,7 +264,6 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             setSubtitles([]);
             setVttTracks([]);
 
-            // Handle offline playback from downloads
             if (isOffline && downloadId) {
                 try {
                     const { getDownloadedVideoURL } = await import('../services/apiService');
@@ -295,7 +299,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                     data.links.sort((a, b) => {
                         const qualityA = parseInt(a.quality.match(/\d{3,4}/)?.[0] || '0');
                         const qualityB = parseInt(b.quality.match(/\d{3,4}/)?.[0] || '0');
-                        return qualityA - qualityB; // Sort ascending for lowest quality first
+                        return qualityA - qualityB;
                     });
                     
                     const lowestQualityStream = data.links[0];
@@ -331,7 +335,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 fetchAndSetStreams();
             }
         }
-    }, [item.id, itemType, initialSeason, initialEpisode?.id, selectedProvider, serverPreferences.join(), selectedDub]);
+    }, [item.id, itemType, initialSeason, initialEpisode?.id, selectedProvider, serverPreferences.join(), selectedDub, t, onStreamFetchStateChange, isOffline, downloadId, setToast, item, onProviderSelected, onActiveStreamUrlChange]);
     
      useEffect(() => {
         let active = true;
@@ -348,9 +352,8 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
 
             const timeOffset = subtitleSettings.timeOffset || 0;
             
-            // START OF FIX 2: Make the regex more flexible to handle both comma and period, and optional spacing.
+            // FINAL FIX 2: Make the regex more flexible to handle both comma and period, and optional spacing.
             const srtTimestampLineRegex = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/g;
-            // END OF FIX 2
 
             const processSrtToVtt = (srtText: string) => {
                 let vttContent = "WEBVTT\n\n";
@@ -618,7 +621,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                         const proxied = { ...current, url: toProxiedUrl(current.url) };
                         setCurrentStream(proxied);
                     }
-                }, 8000);
+                }, 8000); 
             };
             const handlePlayingClear = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
             const handleErrorFallback = () => {
@@ -647,7 +650,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 hlsRef.current.destroy();
             }
         };
-    }, [currentStream, initialTime, setToast, t, shouldResetTime]);
+    }, [currentStream, initialTime, setToast, t, shouldResetTime, isProxiedUrl, toProxiedUrl]);
 
     const togglePlay = useCallback(() => {
         const video = videoRef.current;
@@ -691,6 +694,7 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
         el.className = `absolute top-1/2 -translate-y-1/2 ${forward ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'} w-64 h-64 bg-black/50 flex items-center justify-center text-white z-40 pointer-events-none`;
         (icon as HTMLElement).className = 'text-6xl font-extrabold drop-shadow-lg';
         (icon as HTMLElement).textContent = forward ? '+10' : '−10';
+
         (el as HTMLDivElement).style.top = '48%';
 
         if (!el.parentNode) playerContainerRef.current.appendChild(el);
@@ -795,10 +799,13 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
                 if (!hlsRef.current) {
                     const now = Date.now();
                     const { lastLoaded, lastTime } = lastProgressData.current;
+                    
                     const loaded = bufferedEnd * (video.videoWidth * video.videoHeight ? 250 : 1000); 
+
                     const elapsed = (now - lastTime) / 1000;
                     const diff = loaded - lastLoaded;
-                    if (elapsed > 0.5 && diff > 0) {
+
+                    if (elapsed > 0.5 && diff > 0) { 
                         const speed = (diff / 1024 / elapsed);
                         setLiveSpeed(speed);
                         lastProgressData.current = { lastLoaded: loaded, lastTime: now };
@@ -841,9 +848,14 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     
     const handleQualityChange = (levelIndex: number) => {
         if (hlsRef.current) {
-            hlsRef.current.currentLevel = levelIndex;
+            if (levelIndex === -1) {
+                hlsRef.current.currentLevel = -1;
+            } else {
+                hlsRef.current.nextLevel = levelIndex;
+            }
             setCurrentQuality(levelIndex);
         }
+        setActivePopover(null);
     };
 
     const handleStreamChange = (stream: StreamLink) => {
@@ -851,10 +863,12 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
             setCurrentStream(stream);
             if (onActiveStreamUrlChange) onActiveStreamUrlChange(stream.url);
         }
+        setActivePopover(null);
     };
 
     const handleSubtitleChange = (lang: string | null) => {
         setActiveSubtitleLang(lang);
+        setActivePopover(null);
     };
 
     return (
@@ -963,45 +977,27 @@ const VideoPlayer: React.FC<PlayerProps> = ({ item, itemType, initialSeason, ini
     );
 };
 
-// ========================================================================
-// Reusable UI Components
-// ========================================================================
-
-const SettingsControl: React.FC<{ label: string, value: number, unit?: string, min: number, max: number, step: number, onChange: (newValue: number) => void }> = ({ label, value, unit = '', min, max, step, onChange }) => {
-    const handleDecrement = () => onChange(Math.max(min, parseFloat((value - step).toFixed(2))));
-    const handleIncrement = () => onChange(Math.min(max, parseFloat((value + step).toFixed(2))));
-
+// Reusable Component for Settings Controls
+const SettingsControl: React.FC<{
+    label: string;
+    value: number;
+    unit?: string;
+    onDecrement: () => void;
+    onIncrement: () => void;
+}> = ({ label, value, unit = '', onDecrement, onIncrement }) => {
     return (
         <div>
             <div className="flex items-center justify-between text-xs opacity-80 mb-1">
                 <span>{label}</span>
             </div>
-            <div className="flex items-center justify-between bg-black/20 rounded-lg p-1">
-                <button onClick={handleDecrement} className="w-10 h-8 flex items-center justify-center bg-white/10 rounded-md hover:bg-white/20 transition-colors text-lg">
-                    <i className="fa-solid fa-minus"></i>
-                </button>
-                <span className="font-semibold text-base tabular-nums">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
-                <button onClick={handleIncrement} className="w-10 h-8 flex items-center justify-center bg-white/10 rounded-md hover:bg-white/20 transition-colors text-lg">
-                    <i className="fa-solid fa-plus"></i>
-                </button>
+            <div className="flex items-center justify-between bg-white/5 rounded-md p-1">
+                <button onClick={onDecrement} className="w-10 h-8 flex items-center justify-center text-xl rounded hover:bg-white/10 transition-colors">-</button>
+                <span className="font-mono text-sm">{value}{unit}</span>
+                <button onClick={onIncrement} className="w-10 h-8 flex items-center justify-center text-xl rounded hover:bg-white/10 transition-colors">+</button>
             </div>
         </div>
     );
 };
-
-const Switch: React.FC<{ checked: boolean, onChange: (checked: boolean) => void }> = ({ checked, onChange }) => (
-    <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${checked ? 'bg-[var(--primary)]' : 'bg-gray-600'}`}
-    >
-        <span
-            aria-hidden="true"
-            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'}`}
-        />
-    </button>
-);
 
 
 const Controls: React.FC<any> = ({
@@ -1013,9 +1009,9 @@ const Controls: React.FC<any> = ({
     handleQualityChange, vttTracks, activeSubtitleLang, handleSubtitleChange,
     fitMode, setFitMode,
     availableStreams, handleStreamChange, currentStream, isTranslating,
-    subtitleSettings, onUpdateSubtitleSettings,
-    videoFilters, onUpdateVideoFilters, onResetVideoFilters
+    subtitleSettings, onUpdateSubtitleSettings, videoFilters, onUpdateVideoFilters, onResetVideoFilters
 }) => {
+    
     const handleProgressInteraction = (e: React.MouseEvent | React.TouchEvent, isDragging: boolean) => {
         if (!progressBarRef.current || !videoRef.current || duration === 0) return;
         
@@ -1030,9 +1026,18 @@ const Controls: React.FC<any> = ({
         videoRef.current.currentTime = newTime;
     };
 
-    const handleProgressClick = (e: React.MouseEvent) => handleProgressInteraction(e, false);
-    const handleProgressDrag = (e: React.MouseEvent) => { if (e.buttons === 1) handleProgressInteraction(e, true); };
-    const handlePopoverToggle = (popoverName: 'quality' | 'speed' | 'language') => setActivePopover((p: any) => p === popoverName ? null : popoverName);
+    const handleProgressClick = (e: React.MouseEvent) => {
+        handleProgressInteraction(e, false);
+    };
+
+    const handleProgressDrag = (e: React.MouseEvent) => {
+        if (e.buttons !== 1) return;
+        handleProgressInteraction(e, true);
+    };
+    
+    const handlePopoverToggle = (popoverName: 'quality' | 'speed' | 'language') => {
+        setActivePopover((p: any) => p === popoverName ? null : popoverName);
+    };
 
     const sortedQualities = useMemo(() => {
         return [...availableQualities]
@@ -1041,11 +1046,12 @@ const Controls: React.FC<any> = ({
     }, [availableQualities]);
 
     const hasHlsQualities = sortedQualities && sortedQualities.length > 0;
-
+    
     return (
         <div className={`absolute inset-0 text-white controls-bar pointer-events-none transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/70"></div>
             
+            {/* Top Bar */}
             <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center pointer-events-auto">
                 <div className="flex items-center gap-4">
                     <button onClick={() => navigate(-1)} className="w-10 h-10 text-xl"><Icons.BackIcon className="w-8 h-8" /></button>
@@ -1053,8 +1059,13 @@ const Controls: React.FC<any> = ({
                         <h2 className="text-lg font-bold truncate max-w-[calc(100vw-300px)]">{`${item.title || item.name} ${episode ? ` - S${season} E${episode.episode_number}` : ''}`}</h2>
                     </div>
                 </div>
+                <div className="flex items-center gap-x-6 text-sm">
+                    <button className="flex flex-col items-center gap-1"><i className="fa-solid fa-question-circle text-xl"></i><span className="text-xs">{t('help')}</span></button>
+                    <button className="flex flex-col items-center gap-1"><i className="fa-solid fa-gear text-xl"></i><span className="text-xs">{t('setting')}</span></button>
+                </div>
             </div>
 
+            {/* Side Lock Button */}
             {isFullscreen && (
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
                     <button onClick={onLock} className="flex flex-col items-center gap-2 text-white p-3 rounded-xl transition-colors hover:bg-black/20">
@@ -1064,23 +1075,33 @@ const Controls: React.FC<any> = ({
                 </div>
             )}
 
-            {isFullscreen && !isBuffering && (
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center pointer-events-auto gap-x-16`}>
-                    <button onClick={() => handleSeek(false)}>
-                        <Icons.RewindIcon className={`w-12 h-12 text-white/90 hover:text-white transition-colors`} />
-                    </button>
-                    <button onClick={togglePlay} className="transform transition-transform">
-                        {isPlaying ? <Icons.PauseIcon className={`w-16 h-16`} /> : <Icons.PlayIcon className={`w-16 h-16`} />}
-                    </button>
-                    <button onClick={() => handleSeek(true)}>
-                        <Icons.ForwardIcon className={`w-12 h-12 text-white/90 hover:text-white transition-colors`} />
-                    </button>
+            {/* Center Controls (only in fullscreen) */}
+            {isFullscreen && (
+                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center pointer-events-auto ${isFullscreen ? 'gap-x-16' : 'gap-x-12'}`}>
+                    {!isBuffering && (
+                        <>
+                            <button onClick={() => handleSeek(false)}>
+                                <Icons.RewindIcon className={`${isFullscreen ? 'w-12 h-12' : 'w-10 h-10'} text-white/90 hover:text-white transition-colors`} />
+                            </button>
+                            <button onClick={togglePlay} className="transform transition-transform">
+                                {isPlaying ? 
+                                    <Icons.PauseIcon className={`${isFullscreen ? 'w-16 h-16' : 'w-14 h-14'}`} /> : 
+                                    <Icons.PlayIcon className={`${isFullscreen ? 'w-16 h-16' : 'w-14 h-14'}`} />}
+                            </button>
+                            <button onClick={() => handleSeek(true)}>
+                                <Icons.ForwardIcon className={`${isFullscreen ? 'w-12 h-12' : 'w-10 h-10'} text-white/90 hover:text-white transition-colors`} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
             
             {showNextEpisodeButton && (
                 <div className="absolute bottom-28 right-4 z-20 pointer-events-auto animate-slide-in-from-right">
-                    <button onClick={handlePlayNext} className="relative w-40 h-12 bg-black/70 backdrop-blur-md rounded-lg overflow-hidden flex items-center justify-center text-white font-semibold text-sm btn-press">
+                    <button
+                        onClick={handlePlayNext}
+                        className="relative w-40 h-12 bg-black/70 backdrop-blur-md rounded-lg overflow-hidden flex items-center justify-center text-white font-semibold text-sm btn-press"
+                    >
                         <span>{t('nextEpisode')}</span>
                         <div className="absolute bottom-0 left-0 h-1 bg-white/30 w-full">
                             <div className="h-full bg-white animate-fill-progress"></div>
@@ -1089,14 +1110,23 @@ const Controls: React.FC<any> = ({
                 </div>
             )}
 
+            {/* Bottom Section */}
             <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-auto">
                  <div className="flex items-center gap-x-4">
                     <span className="font-mono text-sm">{formatTime(currentTime)}</span>
-                     <div ref={progressBarRef} onClick={handleProgressClick} onMouseMove={handleProgressDrag} className="w-full flex items-center cursor-pointer group h-4">
+                     <div
+                        ref={progressBarRef}
+                        onClick={handleProgressClick}
+                        onMouseMove={handleProgressDrag}
+                        className="w-full flex items-center cursor-pointer group h-4"
+                    >
                         <div className="relative w-full bg-white/30 rounded-full transition-all duration-200 h-1 group-hover:h-1.5">
                             <div className="absolute h-full bg-white/50 rounded-full" style={{ width: `${buffered}%` }} />
                             <div className="absolute h-full bg-[var(--primary)] rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                            <div className="absolute bg-[var(--primary)] rounded-full -translate-x-1/2 -translate-y-[5px] transition-transform duration-200 z-10 w-3.5 h-3.5 scale-0 group-hover:scale-100" style={{ left: `${(currentTime / duration) * 100}%` }}/>
+                            <div
+                                className="absolute bg-[var(--primary)] rounded-full -translate-x-1/2 -translate-y-[5px] transition-transform duration-200 z-10 w-3.5 h-3.5 scale-0 group-hover:scale-100"
+                                style={{ left: `${(currentTime / duration) * 100}%` }}
+                            />
                         </div>
                     </div>
                     <span className="font-mono text-sm">{formatTime(duration)}</span>
@@ -1104,98 +1134,179 @@ const Controls: React.FC<any> = ({
 
                  <div className="flex items-center justify-between gap-x-2 mt-2">
                     <div className="flex items-center gap-x-4">
-                        <button onClick={togglePlay} className={`w-8 text-center text-2xl`}>{isPlaying ? <i className="fa-solid fa-pause"></i> : <i className="fa-solid fa-play"></i>}</button>
-                        {nextEpisode && <button onClick={handlePlayNext} className={`w-8 text-center text-2xl`}><i className="fa-solid fa-forward-step"></i></button>}
+                        <button onClick={togglePlay} className={`w-8 text-center ${isFullscreen ? 'text-2xl' : 'text-xl'}`}>{isPlaying ? <i className="fa-solid fa-pause"></i> : <i className="fa-solid fa-play"></i>}</button>
+                        {nextEpisode && <button onClick={handlePlayNext} className={`w-8 text-center ${isFullscreen ? 'text-2xl' : 'text-xl'}`}><i className="fa-solid fa-forward-step"></i></button>}
                     </div>
 
                     {isFullscreen ? (
                         <div className="flex items-center gap-x-4 text-sm font-semibold">
                             <button onClick={() => setFitMode((f: string) => f === 'contain' ? 'cover' : 'contain')} className="flex items-center gap-2"><i className="fa-solid fa-expand text-lg"></i> {t('fit')}</button>
-                            <button onClick={() => handlePopoverToggle('language')} className="flex items-center gap-2 relative"><Icons.LanguageIcon className="w-5 h-5" /> {t('language')}</button>
+                            <button onClick={() => handlePopoverToggle('language')} className="flex items-center gap-2 relative"><Icons.LanguageIcon className="w-5 h-5" /> {t('language')}
+                            </button>
                             {activePopover === 'language' && (
                                 <SideSheet onClose={() => setActivePopover(null)} title={t('language')}>
                                     <div className="space-y-2">
-                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitles')}</h4>
+                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitles', { defaultValue: 'Subtitles' })}</h4>
                                         <div className="flex flex-col gap-1">
                                             <button onClick={() => handleSubtitleChange(null)} className={`text-left px-3 py-2 rounded-md ${!activeSubtitleLang ? 'bg-white/10' : 'hover:bg-white/5'}`}>{t('off')}</button>
-                                            {vttTracks.map((sub: any) => <button key={sub.lang} onClick={() => handleSubtitleChange(sub.lang)} className={`text-left px-3 py-2 rounded-md ${activeSubtitleLang === sub.lang ? 'bg-white/10' : 'hover:bg-white/5'}`}>{sub.label}</button>)}
-                                            {isTranslating && <div className="text-center text-xs p-2 text-gray-300 animate-pulse">{t('translating')}</div>}
+                                            {vttTracks.map((sub: any) => (
+                                                <button key={sub.lang} onClick={() => handleSubtitleChange(sub.lang)} className={`text-left px-3 py-2 rounded-md ${activeSubtitleLang === sub.lang ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                    {sub.label}
+                                                </button>
+                                            ))}
+                                            {isTranslating && <div className="text-center text-xs p-2 text-gray-300 animate-pulse">{t('translating', { defaultValue: 'Translating...'})}</div>}
                                         </div>
                                     </div>
                                     <div className="mt-4 space-y-3">
-                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitleSettings')}</h4>
+                                        <h4 className="text-sm font-semibold opacity-80">{t('subtitleSettings', { defaultValue: 'Subtitle Settings' })}</h4>
                                         <div className="space-y-4">
-                                            <SettingsControl label={t('fontSize')} value={subtitleSettings.fontSize} unit="%" min={50} max={200} step={5} onChange={v => onUpdateSubtitleSettings((p:any) => ({...p, fontSize:v}))} />
-                                            <SettingsControl label={t('backgroundOpacity')} value={subtitleSettings.backgroundOpacity} unit="%" min={0} max={100} step={5} onChange={v => onUpdateSubtitleSettings((p:any) => ({...p, backgroundOpacity:v}))} />
+                                            <SettingsControl 
+                                                label={t('fontSize', { defaultValue: 'Font Size' })}
+                                                value={subtitleSettings.fontSize}
+                                                unit="%"
+                                                onDecrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, fontSize: Math.max(50, p.fontSize - 10) }))}
+                                                onIncrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, fontSize: Math.min(200, p.fontSize + 10) }))}
+                                            />
+                                            <SettingsControl 
+                                                label={t('backgroundOpacity', { defaultValue: 'Background Opacity' })}
+                                                value={subtitleSettings.backgroundOpacity}
+                                                unit="%"
+                                                onDecrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, backgroundOpacity: Math.max(0, p.backgroundOpacity - 10) }))}
+                                                onIncrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, backgroundOpacity: Math.min(100, p.backgroundOpacity + 10) }))}
+                                            />
                                             <div>
-                                                <div className="text-xs opacity-80 mb-1">{t('edgeStyle')}</div>
-                                                <select value={subtitleSettings.edgeStyle} onChange={e => onUpdateSubtitleSettings((p:any) => ({...p, edgeStyle:e.target.value}))} className="w-full bg-black/20 border-white/10 rounded-lg px-3 py-2.5">
-                                                    <option value="none">{t('none')}</option>
-                                                    <option value="drop-shadow">{t('dropShadow')}</option>
-                                                    <option value="outline">{t('outline')}</option>
+                                                <div className="flex items-center justify-between text-xs opacity-80 mb-1"><span>{t('edgeStyle', { defaultValue: 'Edge Style' })}</span></div>
+                                                <select value={subtitleSettings.edgeStyle} onChange={(e) => onUpdateSubtitleSettings((prev: any) => ({ ...prev, edgeStyle: e.target.value }))} className="w-full bg-white/10 rounded-md px-3 py-2">
+                                                    <option value="none">{t('none', { defaultValue: 'None' })}</option>
+                                                    <option value="drop-shadow">{t('dropShadow', { defaultValue: 'Drop Shadow' })}</option>
+                                                    <option value="outline">{t('outline', { defaultValue: 'Outline' })}</option>
                                                 </select>
                                             </div>
-                                            <SettingsControl label={t('verticalPosition')} value={subtitleSettings.verticalPosition} min={-20} max={20} step={1} onChange={v => onUpdateSubtitleSettings((p:any) => ({...p, verticalPosition:v}))} />
-                                            <SettingsControl label={t('timeOffset')} value={subtitleSettings.timeOffset} unit="s" min={-5} max={5} step={0.5} onChange={v => onUpdateSubtitleSettings((p:any) => ({...p, timeOffset:v}))} />
+                                            <SettingsControl 
+                                                label={t('verticalPosition', { defaultValue: 'Vertical Position' })}
+                                                value={subtitleSettings.verticalPosition}
+                                                onDecrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, verticalPosition: Math.max(-20, p.verticalPosition - 1) }))}
+                                                onIncrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, verticalPosition: Math.min(20, p.verticalPosition + 1) }))}
+                                            />
+                                            <SettingsControl 
+                                                label={t('timeOffset', { defaultValue: 'Time Offset (s)' })}
+                                                value={subtitleSettings.timeOffset}
+                                                unit="s"
+                                                onDecrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, timeOffset: Math.max(-5, p.timeOffset - 0.5) }))}
+                                                onIncrement={() => onUpdateSubtitleSettings((p: SubtitleSettings) => ({ ...p, timeOffset: Math.min(5, p.timeOffset + 0.5) }))}
+                                            />
                                         </div>
                                     </div>
                                 </SideSheet>
                             )}
                             <button onClick={() => handlePopoverToggle('speed')} className="w-8 text-center relative">{playbackRate}x
-                                {activePopover === 'speed' && ( <Popover onClose={() => setActivePopover(null)}>{[0.5, 1, 1.5, 2].map(r => <button key={r} onClick={()=>{if(videoRef.current) videoRef.current.playbackRate=r; setPlaybackRate(r); setActivePopover(null);}} className={playbackRate===r?'bg-white/20':''}>{r}x</button>)}</Popover> )}
+                                {activePopover === 'speed' && (
+                                     <Popover onClose={() => setActivePopover(null)}>
+                                        {[0.5, 1, 1.5, 2].map(rate => <button key={rate} onClick={() => { if (videoRef.current) videoRef.current.playbackRate = rate; setPlaybackRate(rate); setActivePopover(null); }} className={playbackRate === rate ? 'bg-white/20' : ''}>{rate}x</button>)}
+                                     </Popover>
+                                )}
                             </button>
-                            <button onClick={() => handlePopoverToggle('quality')} className="w-16 text-center relative" aria-label={t('quality')}><Icons.QualityIcon className="w-5 h-5 mx-auto" /></button>
+                            <button onClick={() => handlePopoverToggle('quality')} className="w-16 text-center relative" aria-label={t('quality')}>
+                                <div className="flex items-center justify-center">
+                                    <Icons.QualityIcon className="w-5 h-5" />
+                                </div>
+                            </button>
                             {activePopover === 'quality' && (
-                                <SideSheet onClose={() => setActivePopover(null)} title={t('qualityAndFilters')}>
+                                <SideSheet onClose={() => setActivePopover(null)} title={t('quality')}>
                                     <div className="space-y-2">
                                         {hasHlsQualities ? (
                                             <>
-                                                <h4 className="text-sm font-semibold opacity-80">{t('quality')}</h4>
+                                                <h4 className="text-sm font-semibold opacity-80">{t('mode', { defaultValue: 'Mode' })}</h4>
+                                                <div className="flex flex-col gap-1">
+                                                    <button onClick={() => handleQualityChange(-1)} className={`text-left px-3 py-2 rounded-md ${currentQuality === -1 ? 'bg-white/10' : 'hover:bg-white/5'}`}>{t('auto')}</button>
+                                                </div>
+                                                <h4 className="text-sm font-semibold opacity-80 mt-3">{t('qualities', { defaultValue: 'Qualities' })}</h4>
                                                 <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={() => handleQualityChange(-1)} className={`px-3 py-2 rounded-md ${currentQuality===-1?'bg-white/10':'hover:bg-white/5'}`}>{t('auto')} {autoLevelIndex > -1 ? `(${availableQualities[autoLevelIndex].height}p)` : ''}</button>
-                                                    {sortedQualities.map((l:any)=><button key={l.originalIndex} onClick={()=>handleQualityChange(l.originalIndex)} className={`px-3 py-2 rounded-md ${currentQuality===l.originalIndex?'bg-white/10':'hover:bg-white/5'}`}>{l.height}p</button>)}
+                                                    {sortedQualities.map((level: any) => (
+                                                        <button key={level.originalIndex} onClick={() => handleQualityChange(level.originalIndex)} className={`text-left px-3 py-2 rounded-md ${currentQuality === level.originalIndex ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                            {level.height}p
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </>
                                         ) : (
                                             <>
-                                                <h4 className="text-sm font-semibold opacity-80">{t('streams')}</h4>
+                                                <h4 className="text-sm font-semibold opacity-80">{t('streams', { defaultValue: 'Streams' })}</h4>
                                                 <div className="flex flex-col gap-1">
-                                                    {availableStreams.map((s:any)=><button key={s.url} onClick={()=>handleStreamChange(s)} className={`text-left px-3 py-2 rounded-md ${currentStream?.url===s.url?'bg-white/10':'hover:bg-white/5'}`}>{s.quality}</button>)}
+                                                    {availableStreams.length > 0 ? (
+                                                        availableStreams.map((stream: StreamLink) => (
+                                                            <button key={stream.url} onClick={() => handleStreamChange(stream)} className={`text-left px-3 py-2 rounded-md ${currentStream?.url === stream.url ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                                                                {stream.quality}
+                                                            </button>
+                                                        ))
+                                                    ) : (
+                                                        <button disabled className="cursor-not-allowed opacity-50 text-left px-3 py-2 rounded-md">{t('auto')}</button>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
                                     </div>
-                                    <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                                     <div className="border-t border-white/10 my-4"></div>
+                                     <div className="space-y-3">
                                         <div className="flex items-center justify-between">
-                                            <h4 className="text-sm font-semibold opacity-80">{t('videoFilters')}</h4>
-                                            <div className="flex items-center gap-4">
-                                                <button onClick={onResetVideoFilters} className="text-xs font-semibold text-white/70 hover:text-white">{t('reset')}</button>
-                                                <Switch checked={videoFilters.enabled} onChange={v => onUpdateVideoFilters((p:any) => ({...p, enabled:v}))} />
+                                            <h4 className="text-sm font-semibold opacity-80">{t('videoFilters', { defaultValue: 'Video Filters' })}</h4>
+                                            <div className="flex items-center gap-2">
+                                                 <button 
+                                                    onClick={onResetVideoFilters}
+                                                    className="px-3 py-1 rounded-full text-xs bg-white/10 hover:bg-white/20"
+                                                >
+                                                    {t('resetFilters', { defaultValue: 'Reset' })}
+                                                </button>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" checked={videoFilters.enabled} onChange={(e) => onUpdateVideoFilters((p: VideoFilters) => ({...p, enabled: e.target.checked}))} className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--primary)]"></div>
+                                                </label>
                                             </div>
                                         </div>
                                         {videoFilters.enabled && (
                                             <div className="space-y-4 animate-fade-in">
-                                                <SettingsControl label={t('brightness')} value={videoFilters.brightness} unit="%" min={-50} max={100} step={5} onChange={v => onUpdateVideoFilters((p:any) => ({...p, brightness:v}))} />
-                                                <SettingsControl label={t('contrast')} value={videoFilters.contrast} unit="%" min={-50} max={100} step={5} onChange={v => onUpdateVideoFilters((p:any) => ({...p, contrast:v}))} />
-                                                <SettingsControl label={t('saturation')} value={videoFilters.saturation} unit="%" min={-100} max={100} step={5} onChange={v => onUpdateVideoFilters((p:any) => ({...p, saturation:v}))} />
-                                                <SettingsControl label={t('hue')} value={videoFilters.hue} unit="°" min={-180} max={180} step={10} onChange={v => onUpdateVideoFilters((p:any) => ({...p, hue:v}))} />
+                                                <SettingsControl
+                                                    label={t('brightness', { defaultValue: 'Brightness' })}
+                                                    value={videoFilters.brightness}
+                                                    unit="%"
+                                                    onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, brightness: Math.max(-100, p.brightness - 5)}))}
+                                                    onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, brightness: Math.min(100, p.brightness + 5)}))}
+                                                />
+                                                <SettingsControl
+                                                    label={t('contrast', { defaultValue: 'Contrast' })}
+                                                    value={videoFilters.contrast}
+                                                    unit="%"
+                                                    onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, contrast: Math.max(-100, p.contrast - 5)}))}
+                                                    onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, contrast: Math.min(100, p.contrast + 5)}))}
+                                                />
+                                                <SettingsControl
+                                                    label={t('saturation', { defaultValue: 'Saturation' })}
+                                                    value={videoFilters.saturation}
+                                                    unit="%"
+                                                    onDecrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, saturation: Math.max(-100, p.saturation - 5)}))}
+                                                    onIncrement={() => onUpdateVideoFilters((p: VideoFilters) => ({...p, saturation: Math.min(100, p.saturation + 5)}))}
+                                                />
                                             </div>
                                         )}
                                     </div>
                                 </SideSheet>
                             )}
-                            <button onClick={toggleFullscreen} className="text-xl w-8 text-center"><Icons.ExitFullscreenIcon className="w-5 h-5" /></button>
+                            <button onClick={toggleFullscreen} className="text-xl w-8 text-center">
+                                <Icons.ExitFullscreenIcon className="w-5 h-5" />
+                            </button>
                         </div>
                     ) : (
                          <div className="flex items-center gap-x-2">
-                            <button onClick={toggleFullscreen} className="text-xl w-8 text-center"><Icons.EnterFullscreenIcon className="w-5 h-5" /></button>
+                            <button onClick={toggleFullscreen} className="text-xl w-8 text-center">
+                                <Icons.EnterFullscreenIcon className="w-5 h-5" />
+                            </button>
                         </div>
                     )}
                 </div>
             </div>
         </div>
     );
-};
+}
 
 const Popover: React.FC<{onClose: ()=>void, children: React.ReactNode}> = ({onClose, children}) => {
     return (
@@ -1203,7 +1314,7 @@ const Popover: React.FC<{onClose: ()=>void, children: React.ReactNode}> = ({onCl
             {children}
         </div>
     )
-};
+}
 
 const SideSheet: React.FC<{ onClose: () => void, title: string, children: React.ReactNode }> = ({ onClose, title, children }) => {
     const [closing, setClosing] = React.useState(false);
