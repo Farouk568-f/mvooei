@@ -78,7 +78,7 @@ export const translateSrtViaGoogle = async (srtContent: string, targetLang: stri
             target_lang: targetLang
         };
         
-        const baseUrl = 'https://3c32e82837da.ngrok-free.app';
+        const baseUrl = 'https://5c8e0cdc862b.ngrok-free.app';
         
         const response = await fetch(`${baseUrl}/translate_srt`, {
             method: 'POST',
