@@ -9,7 +9,7 @@ export const BACKDROP_SIZE = "w1280";
 export const BACKDROP_SIZE_MEDIUM = "w780";
 
 // IMPORTANT: This is the new backend URL for fetching stream links.
-export const SCRAPER_API_URL = "https://5c8e0cdc862b.ngrok-free.app/scrape";
+export const SCRAPER_API_URL = "https://abf18b9ff1ea.ngrok-free.app/scrape";
 
 export const AVAILABLE_PROVIDERS = [
     { id: 'moviebox', name: 'MovieBox' },
